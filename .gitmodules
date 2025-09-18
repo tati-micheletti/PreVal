@@ -1,0 +1,3 @@
+[submodule "modules/movementDataPrep"]
+	path = modules/movementDataPrep
+	url = git@github.com:tati-micheletti/movementDataPrep.git
