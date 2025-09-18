@@ -1,0 +1,601 @@
+---
+title: "preVal -- Testing Predictive Validation"
+author: "Tati Micheletti"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+This script described the steps to develop the preVal project. It is divided in 2 parts.  
+
+PART I: Testing the RSF. This implements the DeMars et al., 2020 model structure, refitting it with different number of covariates chosen based on the full models' covariates' weight (based on external table). We use resource selection functions (RSFs) to model year-round habitat selection by boreal caribou in the Northwest Territories, including estimation and validation. Data is from year-round and estimation from an RSF at a second-order scale.
+
+The first step is to make sure we have Require and SpaDES project installed.
+
+### FROM HERE ON, USE THE CODE TO MAKE THE R runME.R. AFTERWARDS, RE-WRITE HERE!
+
+```{r load_packages, eval=FALSE}
+getOrUpdatePkg <- function(p, minVer = "0") {
+  if (!isFALSE(try(packageVersion(p) < minVer, silent = TRUE) )) {
+    repo <- c("predictiveecology.r-universe.dev", getOption("repos"))
+    install.packages(p, repos = repo)
+  }
+}
+getOrUpdatePkg("Require", "1.0.1")
+getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
+
+################### SETUP
+
+if (SpaDES.project::user("tmichele")) setwd("~/projects/preVal/")
+scratchPath <- Require::checkPath("~/scratch", create = TRUE) #
+if (SpaDES.project::user("tmichele")) terra::terraOptions(tempdir = scratchPath)
+
+
+pcks <- c("plyr", "tidyverse", "raster", "sf","glmmTMB", "lme4", "adehabitatH
+R", "adehabitatLT", "lubridate", "rgdal", "sp", "dummies", "classInt", "caret
+", "MuMIn", "forcats", "foreach", "doParallel")
+sapply(pcks, require, character = TRUE)
+```
+
+Next, the caribou GPS locations and the second-order random locations are imported. These data have had data from all resource covariates previously extracted to them.
+
+```{r import_data, eval=FALSE}
+#Import caribou GPS Locations for the calving season.
+bou.use <- read.csv("YourFileSystem\\Calving_UsePts_Extract_20200310.csv")
+
+length(unique(bou.use$AID)) #Number of caribou
+## [1] 276
+length(unique(bou.use$AIDYr)) #Number of caribou-seasons
+## [1] 480
+
+colnames(bou.use)[31:32] <- c("POINT_X", "POINT_Y")
+bou.use <- dplyr::select(bou.use, -X)
+bou.use$date <- ymd_hms(bou.use$date)
+bou.use$use <- 1
+
+#Display first row of data.
+head(bou.use, 1)
+##
+##                  date        dx         dy     dist    dt   R2n
+## 1 2007-06-04 08:01:55 -8.649065 -292.71090 292.83865 28800  0.00
+##   abs.angle rel.angle      AIDYr      AID   Yr Month Day Hr Min Region
+## 1 -1.60033588        NA IN0701.2007 IN0701 2007     6   4  8   1 inuvik
+##         Habitat lc burn      p_broad p_consparse ld1000_10 ld1000_15
+## 1 Gwichin North 213   NA 0.0000000000   0.4699325 0.8171973 0.8171910
+##   dist_roads10 dist_roads15 dist_maj_rds dist_poly10 dist_poly15 dto_settle
+## 1     8233.401     8083.873     8247.764    8103.555    8103.555    17495.7
+##     POINT_X POINT_Y use
+## 1 -867965.0 3264431   1
+```
+
+```{r data_separation, eval=FALSE}
+#Separate into North and South locations.
+n.bou <- bou.use[bou.use$Region=="inuvik" | bou.use$Region=="sahtu",]
+
+s.bou <- bou.use[bou.use$Region=="nslave" | bou.use$Region=="sslave" | bou.us
+e$Region=="dehcho",]
+
+#Import random points.
+#Random points from North MCP
+n.rpts <- read.csv("YourFileSystem\\SecondOrder_NorthRegion_RanPts_Extract_Ma
+jRds.csv")
+colnames(n.rpts)[32:33] <- c("POINT_X", "POINT_Y")
+n.rpts <- dplyr::select(n.rpts, -c(X, X.1, X.2))
+n.rpts <- mutate(n.rpts, p_broad = p_broad_d + p_broad_o + p_mix_dens) #creat
+e variable describing the proportion of broadleaf forest in a 1-km radius
+n.rpts <- n.rpts[sample(nrow(n.rpts), 3000),] #subsample to 3000 random point
+s based on sensitivity analysis
+
+#Random points from South MCP
+s.rpts <- read.csv("YourFileSystem \\SecondOrder_SouthRegion_RanPts_Extract_M
+ajRds.csv")
+colnames(s.rpts)[32:33] <- c("POINT_X", "POINT_Y")
+s.rpts <- dplyr::select(s.rpts, -c(X, X.1, X.2))
+s.rpts <- mutate(s.rpts, p_broad = p_broad_d + p_broad_o + p_mix_dens)
+s.rpts <- s.rpts[sample(nrow(s.rpts), 3000),] #subsample to 3000 random point
+s based on sensitivity analysis
+```
+
+```{r bind_random_points, eval=FALSE}
+#Next, bind the random points to each individual caribou.
+#First, the northern caribou
+n.bou <- as_tibble(n.bou)
+n.rpts <- as_tibble(n.rpts)
+nAIDYr <- unique(n.bou$AIDYr)
+n.dat <- tibble()
+for(i in nAIDYr){
+  caribou <- n.bou %>% dplyr::select(AIDYr, AID, Yr, Region, Habitat, lc:use)
+  %>% dplyr::filter(AIDYr==i)
+  avail <- n.rpts %>% dplyr::select(lc, ld1000_10:burn, p_consparse, p_broad,
+                                    dist_maj_rds, POINT_X, POINT_Y) %>% add_column(AIDYr = i, AID = caribou$AID[1
+                                    ], Yr = caribou$Yr[1], Region = caribou$Region[1], Habitat = caribou$Habitat[
+                                      1], use = 0)
+  n.dat <- rbind.data.frame(n.dat, caribou, avail)
+}
+
+#Then the southern caribou
+s.bou <- as_tibble(s.bou)
+s.rpts <- as_tibble(s.rpts)
+sAIDYr <- unique(s.bou$AIDYr)
+s.dat <- tibble()
+for(i in sAIDYr){
+  caribou <- s.bou %>% dplyr::select(AIDYr, AID, Yr, Region, Habitat, lc:use)
+  %>% dplyr::filter(AIDYr==i)
+  avail <- s.rpts %>% dplyr::select(lc, ld1000_10:burn, p_consparse, p_broad,
+                                    dist_maj_rds, POINT_X, POINT_Y) %>% add_column(AIDYr = i, AID = caribou$AID[1
+                                    ], Yr = caribou$Yr[1], Region = caribou$Region[1], Habitat = caribou$Habitat[
+                                      1], use = 0)
+  s.dat <- rbind.data.frame(s.dat, caribou, avail)
+}
+
+#Bind the two data sets together
+bou.dat <- rbind.data.frame(n.dat, s.dat)
+rm(caribou, avail, n.dat, s.dat, s.rpts, n.rpts, bou.use)
+```
+
+Prior to estimating the RSF model, we formatted the data, including creating 'dummy' variables for local land-cover, creating exponential decay variables from ‘distance-to' variables (see Methods in the main report), and matching the timestamp of the location data to the relevant timestamp of the covariate data.
+
+```{r format_data, eval=FALSE}
+#Create a duplicate Land cover column to preserve the original data
+bou.dat$lc2 <- bou.dat$lc
+#Turn NAs in burn column to zeroes
+bou.dat$burn[is.na(bou.dat$burn)] <- 0
+
+#Line Density Variables
+##Create a continuous variable whose values depend on the time stamp of the l
+ocation
+bou.dat <- bou.dat %>% mutate(ld1000 = if_else(Yr <= 2010, ld1000_10, ld1000_
+15))
+
+#Distance to Roads Variable
+##Create a continuous variable whose values depend on the time stamp of the l
+ocation
+bou.dat <- bou.dat %>% mutate(dist_roads = if_else(Yr <= 2010, dist_roads10,
+                                                   dist_roads15))
+#Exponential decay of distance to roads (decays where 0.95 value occurs at 12
+50-m -> Leblond et al. 2011 reported road effects at 1.25 km)
+bou.dat$exp.rds <- 1- exp(-0.0025*bou.dat$dist_roads)
+
+#Distance to Major Roads Variable
+#Exponential decay of distance to roads (decays where 0.95 value occurs at 12
+50-m -> Leblond et al. 2011 reported road effects at 1.25 km)
+bou.dat$exp.maj.rds <- 1- exp(-0.0025*bou.dat$dist_maj_rds)
+
+#Distance to Polygonal Disturbance Variable
+##Create a continuous variable whose values depend on the time stamp of the l
+ocation
+bou.dat <- bou.dat %>% mutate(dist_poly = if_else(Yr <= 2010, dist_poly10, di
+st_poly15))
+#Exponential decay of distance to polygonal disturbance (decays to 0.95 by 1-
+km)
+bou.dat$exp.poly <- 1- exp(-0.003*bou.dat$dist_poly)
+
+#Distance to Settlements Variable
+#Exponential decay of distance to settlements (decays to 0.95 by 5-km)
+bou.dat$exp.settle <- 1- exp(-0.000625*bou.dat$dto_settle)
+
+#Burn Variables
+#Create burn age classes
+bou.dat$fire10 <- ifelse(bou.dat$burn >= bou.dat$Yr - 10 & bou.dat$burn < bou
+.dat$Yr, 1, 0) #fires 1-10 y.o.
+bou.dat$fire20 <- ifelse(bou.dat$burn >= bou.dat$Yr - 20 & bou.dat$burn < bou
+.dat$Yr - 10, 1, 0) #fires 11-20 y.o.
+bou.dat$fire30 <- ifelse(bou.dat$burn >= bou.dat$Yr - 30 & bou.dat$burn < bou
+.dat$Yr - 20, 1, 0) #fires 21-30 y.o
+bou.dat$fire40 <- ifelse(bou.dat$burn >= bou.dat$Yr - 40 & bou.dat$burn < bou
+.dat$Yr - 30, 1, 0) #fires 31-40 y.o.
+bou.dat$fire60 <- ifelse(bou.dat$burn >= bou.dat$Yr - 60 & bou.dat$burn < bou
+.dat$Yr - 40, 1, 0) #fires 41-60 y.o.
+
+#then create new burn classes within Land cover variable
+bou.dat$lc2 <- ifelse(bou.dat$fire10 == 1, 199, bou.dat$lc2)
+bou.dat$lc2 <- ifelse(bou.dat$fire20 == 1, 299, bou.dat$lc2)
+bou.dat$lc2 <- ifelse(bou.dat$fire30 == 1, 399, bou.dat$lc2)
+bou.dat$lc2 <- ifelse(bou.dat$fire40 == 1, 499, bou.dat$lc2)
+bou.dat$lc2 <- ifelse(bou.dat$fire60 == 1, 699, bou.dat$lc2)
+
+#Create dummy variables. Need to first transform back to data frame
+bou.dat <- as.data.frame(bou.dat)
+bou.dat <- dummy.data.frame(bou.dat, names="lc2")
+
+#Rename variables to something more intuitive
+bou.dat <- dplyr::rename(bou.dat, snow = lc212, water = lc220, rock = lc232,
+                         exp.land = lc233, exp.land2 = lc234, bryoids = lc240, t.shrub = lc251, s.shru
+                         b = lc252, t.wet = lc281, s.wet = lc282, h.wet = lc283, herb = lc2100, con.de
+                         ns = lc2211, con.open = lc2212, con.sp = lc2213, broad.d = lc2221, broad.o =
+                           lc2222, mix.dens = lc2231, mix.o = lc2232, burn10 = lc2199, burn20 = lc2299,
+                         burn30 = lc2399, burn40 = lc2499, burn60 = lc2699)
+```
+
+```{r create_indicator_variables, eval=FALSE}
+#Create non-veg category
+bou.dat <- bou.dat %>% mutate(nonveg = snow + rock + exp.land + exp.land2)
+bou.dat$nonveg <- ifelse(bou.dat$nonveg >= 1, 1, 0)
+
+#Create an indicator variables for lowlands (t.wet, s.wet, h.wet, herb, con.s
+p), uplands non-treed, uplands conifer (con.dens, con.open), uplands broadlea
+f.
+bou.dat$low <- 0
+bou.dat$low[bou.dat$lc==81 | bou.dat$lc==82 | bou.dat$lc==83| bou.dat$lc==100
+            | bou.dat$lc==213] <- 1
+
+bou.dat$up.nt <- 0
+bou.dat$up.nt[bou.dat$lc==40 | bou.dat$lc==51 | bou.dat$lc==52] <- 1
+
+bou.dat$up.con <- 0
+bou.dat$up.con[bou.dat$lc==211 | bou.dat$lc==212] <- 1
+
+bou.dat$up.dec <- 0
+bou.dat$up.dec[bou.dat$lc==221 | bou.dat$lc==222 | bou.dat$lc==231 | bou.dat$
+               lc==232] <- 1
+```
+
+```{r burn_interactions, eval=FALSE}
+#Burn in interactions.
+#Burned Lowlands
+bou.dat$burn10low <- bou.dat$burn10 + bou.dat$low
+bou.dat$burn10low <- ifelse(bou.dat$burn10low >= 2, 1, 0)
+bou.dat$burn20low <- bou.dat$burn20 + bou.dat$low
+bou.dat$burn20low <- ifelse(bou.dat$burn20low >= 2, 1, 0)
+bou.dat$burn30low <- bou.dat$burn30 + bou.dat$low
+bou.dat$burn30low <- ifelse(bou.dat$burn30low >= 2, 1, 0)
+bou.dat$burn40low <- bou.dat$burn40 + bou.dat$low
+bou.dat$burn40low <- ifelse(bou.dat$burn40low >= 2, 1, 0)
+bou.dat$burn60low <- bou.dat$burn60 + bou.dat$low
+bou.dat$burn60low <- ifelse(bou.dat$burn60low >= 2, 1, 0)
+#to change 'low' variable to 'low unburned'
+bou.dat$low <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.dat$b
+                      urn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$low)
+#burn in Lowland burn categories
+bou.dat$t.wet <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.dat
+                       $burn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$t.wet
+)
+bou.dat$s.wet <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.dat
+                       $burn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$s.wet
+)
+bou.dat$h.wet <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.dat
+                       $burn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$h.wet
+)
+bou.dat$herb <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.dat$
+                       burn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$herb)
+bou.dat$con.sp <- ifelse(bou.dat$burn10low==1 | bou.dat$burn20low==1 | bou.da
+                        t$burn30low==1 | bou.dat$burn40low==1 | bou.dat$burn60low==1, 0, bou.dat$con.
+                        sp)
+
+#Burned non-treed uplands
+bou.dat$burn10up.nt <- bou.dat$burn10 + bou.dat$up.nt
+bou.dat$burn10up.nt <- ifelse(bou.dat$burn10up.nt >= 2, 1, 0)
+bou.dat$burn20up.nt <- bou.dat$burn20 + bou.dat$up.nt
+bou.dat$burn20up.nt <- ifelse(bou.dat$burn20up.nt >= 2, 1, 0)
+bou.dat$burn30up.nt <- bou.dat$burn30 + bou.dat$up.nt
+bou.dat$burn30up.nt <- ifelse(bou.dat$burn30up.nt >= 2, 1, 0)
+bou.dat$burn40up.nt <- bou.dat$burn40 + bou.dat$up.nt
+bou.dat$burn40up.nt <- ifelse(bou.dat$burn40up.nt >= 2, 1, 0)
+bou.dat$burn60up.nt <- bou.dat$burn60 + bou.dat$up.nt
+bou.dat$burn60up.nt <- ifelse(bou.dat$burn60up.nt >= 2, 1, 0)
+#to change 'up.nt' variable to 'up.nt unburned'
+bou.dat$up.nt <- ifelse(bou.dat$burn10up.nt==1 | bou.dat$burn20up.nt==1 | bou
+.dat$burn30up.nt==1 | bou.dat$burn40up.nt==1 | bou.dat$burn60up.nt==1, 0, bou
+.dat$up.nt)
+#burn in not-treed upland burn categories
+bou.dat$t.shrub <- ifelse(bou.dat$burn10up.nt==1 | bou.dat$burn20up.nt==1 | b
+                          ou.dat$burn30up.nt==1 | bou.dat$burn40up.nt==1 | bou.dat$burn60up.nt==1, 0, b
+                          ou.dat$t.shrub)
+bou.dat$s.shrub <- ifelse(bou.dat$burn10up.nt==1 | bou.dat$burn20up.nt==1 | b
+                          ou.dat$burn30up.nt==1 | bou.dat$burn40up.nt==1 | bou.dat$burn60up.nt==1, 0, b
+                          ou.dat$s.shrub)
+bou.dat$bryoids <- ifelse(bou.dat$burn10up.nt==1 | bou.dat$burn20up.nt==1 | b
+                          ou.dat$burn30up.nt==1 | bou.dat$burn40up.nt==1 | bou.dat$burn60up.nt==1, 0, b
+                          ou.dat$bryoids)
+
+#Burned upland conifer
+bou.dat$burn10up.con <- bou.dat$burn10 + bou.dat$up.con
+bou.dat$burn10up.con <- ifelse(bou.dat$burn10up.con >= 2, 1, 0)
+bou.dat$burn20up.con <- bou.dat$burn20 + bou.dat$up.con
+bou.dat$burn20up.con <- ifelse(bou.dat$burn20up.con >= 2, 1, 0)
+bou.dat$burn30up.con <- bou.dat$burn30 + bou.dat$up.con
+bou.dat$burn30up.con <- ifelse(bou.dat$burn30up.con >= 2, 1, 0)
+bou.dat$burn40up.con <- bou.dat$burn40 + bou.dat$up.con
+bou.dat$burn40up.con <- ifelse(bou.dat$burn40up.con >= 2, 1, 0)
+bou.dat$burn60up.con <- bou.dat$burn60 + bou.dat$up.con
+bou.dat$burn60up.con <- ifelse(bou.dat$burn60up.con >= 2, 1, 0)
+#to change 'up.con' variable to 'up.con unburned'
+bou.dat$up.con <- ifelse(bou.dat$burn10up.con==1 | bou.dat$burn20up.con==1 |
+                         bou.dat$burn30up.con==1 | bou.dat$burn40up.con==1 | bou.dat$burn60up.con==1,
+                         0, bou.dat$up.con)
+#burn in upland conifer burn categories
+bou.dat$con.dens <- ifelse(bou.dat$burn10up.con==1 | bou.dat$burn20up.con==1
+                           | bou.dat$burn30up.con==1 | bou.dat$burn40up.con==1 | bou.dat$burn60up.con==1
+                           , 0, bou.dat$con.dens)
+bou.dat$con.open <- ifelse(bou.dat$burn10up.con==1 | bou.dat$burn20up.con==1
+                           | bou.dat$burn30up.con==1 | bou.dat$burn40up.con==1 | bou.dat$burn60up.con==1
+                           , 0, bou.dat$con.open)
+
+#Burned broadleaf (or deciduous)
+bou.dat$burn10up.dec <- bou.dat$burn10 + bou.dat$up.dec
+bou.dat$burn10up.dec <- ifelse(bou.dat$burn10up.dec >= 2, 1, 0)
+bou.dat$burn20up.dec <- bou.dat$burn20 + bou.dat$up.dec
+bou.dat$burn20up.dec <- ifelse(bou.dat$burn20up.dec >= 2, 1, 0)
+bou.dat$burn30up.dec <- bou.dat$burn30 + bou.dat$up.dec
+bou.dat$burn30up.dec <- ifelse(bou.dat$burn30up.dec >= 2, 1, 0)
+bou.dat$burn40up.dec <- bou.dat$burn40 + bou.dat$up.dec
+bou.dat$burn40up.dec <- ifelse(bou.dat$burn40up.dec >= 2, 1, 0)
+bou.dat$burn60up.dec <- bou.dat$burn60 + bou.dat$up.dec
+bou.dat$burn60up.dec <- ifelse(bou.dat$burn60up.dec >= 2, 1, 0)
+#to change 'up.dec' variable to 'up.dec unburned'
+bou.dat$up.dec <- ifelse(bou.dat$burn10up.dec==1 | bou.dat$burn20up.dec==1 |
+                         bou.dat$burn30up.dec==1 | bou.dat$burn40up.dec==1 | bou.dat$burn60up.dec==1,
+                         0, bou.dat$up.dec)
+#burn in upland deciduous burn categories
+bou.dat$broad.d <- ifelse(bou.dat$burn10up.dec==1 | bou.dat$burn20up.dec==1 |
+                          bou.dat$burn30up.dec==1 | bou.dat$burn40up.dec==1 | bou.dat$burn60up.dec==1,
+                          0, bou.dat$broad.d)
+bou.dat$broad.o <- ifelse(bou.dat$burn10up.dec==1 | bou.dat$burn20up.dec==1 |
+                          bou.dat$burn30up.dec==1 | bou.dat$burn40up.dec==1 | bou.dat$burn60up.dec==1,
+                          0, bou.dat$broad.o)
+bou.dat$mix.dens <- ifelse(bou.dat$burn10up.dec==1 | bou.dat$burn20up.dec==1
+                           | bou.dat$burn30up.dec==1 | bou.dat$burn40up.dec==1 | bou.dat$burn60up.dec==1
+                           , 0, bou.dat$mix.dens)
+bou.dat$mix.o <- ifelse(bou.dat$burn10up.dec==1 | bou.dat$burn20up.dec==1 | b
+                        ou.dat$burn30up.dec==1 | bou.dat$burn40up.dec==1 | bou.dat$burn60up.dec==1, 0
+                        , bou.dat$mix.o)
+```
+
+With data formatted, the next step is to estimate the RSF. To do so, we fit a generalized linear mixed-effects model using the 'glmmTMB' function from the 'glmmTMB' package. Models were fit to the whole data set and a data set where caribou in the Mackenzie sub-region were excluded.
+
+```{r run_mixed_model, eval=FALSE}
+#Run mixed-effects model
+full.m <- glmmTMB(use ~ bryoids + t.shrub + s.shrub + t.wet + s.wet + h.wet +
+                    herb + con.open + con.sp + broad.d + broad.o + mix.o + mix.dens + water + non
+                  veg + p_broad + p_consparse + burn10low + burn20low + burn30low + burn40low +
+                    burn60low + burn10up.nt + burn20up.nt + burn30up.nt + burn40up.nt + burn60up.
+                  nt + burn10up.con + burn20up.con + burn30up.con + burn40up.con + burn60up.con
+                  + burn10up.dec + burn20up.dec + burn30up.dec + burn40up.dec + burn60up.dec +
+                    ld1000 + exp.maj.rds + exp.poly + exp.settle + (1|Habitat/AIDYr), family=bino
+                  mial, data=bou.dat)
+
+#Run model with Mackenzie caribou excluded
+bou.dat.noMac <- bou.dat[bou.dat$Habitat != "Mackenzie",]
+bou.dat.noMac$Habitat <- droplevels(bou.dat.noMac)$Habitat
+
+noMac <- glmmTMB(use ~ bryoids + t.shrub + s.shrub + t.wet + s.wet + h.wet +
+                   herb + con.open + con.sp + broad.d + broad.o + mix.o + mix.dens + water + non
+                 veg + p_broad + p_consparse + burn10low + burn20low + burn30low + burn40low +
+                   burn60low + burn10up.nt + burn20up.nt + burn30up.nt + burn40up.nt + burn60up.
+                 nt + burn10up.con + burn20up.con + burn30up.con + burn40up.con + burn60up.con
+                 + burn10up.dec + burn20up.dec + burn30up.dec + burn40up.dec + burn60up.dec +
+                   ld1000 + exp.maj.rds + exp.poly + exp.settle + (1|Habitat/AIDYr), family=bino
+                 mial, data=bou.dat.noMac)
+```
+
+The final step is to evaluate the predictive performance of the RSF model. We used k-fold cross validation, which involves iteratively partitioning the data by individual caribou into a training set (4 folds or 80% of the individual caribou), estimating the RSF, then testing model predictions on the withheld caribou. See the Methods section in the main report for further details. Because RSF models with these large data sets can take > 2 hours to converge, we used parallel computing to speed up the process. The results are returned in list form, which is then transformed into a data frame.
+
+```{r k-fold_validation, eval=FALSE}
+#If not already done before
+bou.dat.noMac <- bou.dat[bou.dat$Habitat != "Mackenzie",]
+bou.dat.noMac$Habitat <- droplevels(bou.dat.noMac)$Habitat
+
+#get range (available) points. these have already been formatted (year = 2017
+)
+rpts <- read.csv("I:\\Contract_Work\\ABMI\\NWT_RSF\\Tables\\SecondOrderRSFDat
+a\\SecondOrderRandomPoints_Formatted_20200131.csv")
+
+#Use parallel computing
+detectCores() #My computer has 8 cores
+
+#Specify that 5 cores be used
+myCluster <- makeCluster(5, type = "PSOCK")
+registerDoParallel(myCluster)
+
+kAID <- unique(bou.dat.noMac$AID) #specify animal IDs
+
+#Run the 10 iterations, which will be spread among the 5 cores. Need to spec
+ify the R packages to be used within the ‘foreach’loop.
+kfold.res <- foreach(i = 1:10, .packages = c("caret", "glmmTMB", "MuMIn", "cl
+assInt"), .errorhandling = 'pass') %dopar% {
+  folds <- createFolds(kAID, k=5) #creates 5 groups of data
+  
+  test <- kAID[folds[[1]][1:length(folds[[1]])]]
+  
+  train <- bou.dat.noMac[!(bou.dat.noMac$AID %in% test),]
+  
+  testpts <- bou.dat.noMac[(bou.dat.noMac$AID %in% test),]
+  testrange <- testpts[testpts$use==0,]
+  testpts <- testpts[testpts$use==1,]
+  testpts <- testpts[complete.cases(testpts),]
+  
+  #train model
+  km <- glmmTMB(use ~ bryoids + t.shrub + s.shrub + t.wet + s.wet + h.wet + h
+                erb + con.open + con.sp + broad.d + broad.o + mix.o + mix.dens + water + nonv
+                eg + p_broad + p_consparse + burn10low + burn20low + burn30low + burn40low +
+                  burn60low + burn10up.nt + burn20up.nt + burn30up.nt + burn40up.nt + burn60up.
+                nt + burn10up.con + burn20up.con + burn30up.con + burn40up.con + burn60up.con
+                + burn10up.dec + burn20up.dec + burn30up.dec + burn40up.dec + burn60up.dec +
+                  ld1000 + exp.maj.rds + exp.poly + exp.settle + (1|Habitat/AIDYr), family=bino
+                mial, data=train)
+  betas <- coefTable(km)
+  
+  #kfold (map-based): availability is constant for each caribou (see Methods
+  in main report)
+  av <- rpts
+  av <- av[complete.cases(av),]
+  
+  map <- exp(betas[2,1]*av$bryoids + betas[3,1]*av$t.shrub + betas[4,1]*av$s.
+             shrub + betas[5,1]*av$t.wet + betas[6,1]*av$s.wet + betas[7,1]*av$h.wet + bet
+             as[8,1]*av$herb + betas[9,1]*av$con.open + betas[10,1]*av$con.sp + betas[11,1
+             ]*av$broad.d + betas[12,1]*av$broad.o + betas[13,1]*av$mix.o + betas[14,1]*av
+             $mix.dens + betas[15,1]*av$water + betas[16,1]*av$nonveg + betas[17,1]*av$p_b
+             road + betas[18,1]*av$p_consparse + betas[19,1]*av$burn10low + betas[20,1]*av
+             $burn20low + betas[21,1]*av$burn30low + betas[22,1]*av$burn40low + betas[23,1
+             ]*av$burn60low + betas[24,1]*av$burn10up.nt + betas[25,1]*av$burn20up.nt + be
+             tas[26,1]*av$burn30up.nt + betas[27,1]*av$burn40up.nt + betas[28,1]*av$burn60
+             up.nt + betas[29,1]*av$burn10up.con + betas[30,1]*av$burn20up.con + betas[31,
+             1]*av$burn30up.con + betas[32,1]*av$burn40up.con + betas[33,1]*av$burn60up.co
+             n + betas[34,1]*av$burn10up.dec + betas[35,1]*av$burn20up.dec + betas[36,1]*a
+             v$burn30up.dec + betas[37,1]*av$burn40up.dec + betas[38,1]*av$burn60up.dec +
+               betas[39,1]*av$ld1000 + betas[40,1]*av$exp.maj.rds + betas[41,1]*av$exp.poly
+             + betas[42,1]*av$exp.settle)
+  
+  #Standardize
+  mapN <- (map - min(map))/(max(map)-min(map))
+  
+  #Split range points into equal intervals from min to max. This creates deci
+  le bins based on availability
+  eq <- classIntervals(mapN, 10, style="quantile")
+  eq <- eq$brks
+  
+  testpred <- exp(betas[2,1]*testpts$bryoids + betas[3,1]*testpts$t.shrub + b
+                  etas[4,1]*testpts$s.shrub + betas[5,1]*testpts$t.wet + betas[6,1]*testpts$s.w
+                  et + betas[7,1]*testpts$h.wet + betas[8,1]*testpts$herb + betas[9,1]*testpts$
+                    con.open + betas[10,1]*testpts$con.sp + betas[11,1]*testpts$broad.d + betas[1
+                                                                                                  2,1]*testpts$broad.o + betas[13,1]*testpts$mix.o + betas[14,1]*testpts$mix.de
+                                                                                                ns + betas[15,1]*testpts$water + betas[16,1]*testpts$nonveg + betas[17,1]*tes
+                                                                                                tpts$p_broad + betas[18,1]*testpts$p_consparse + betas[19,1]*testpts$burn10lo
+                                                                                                w + betas[20,1]*testpts$burn20low + betas[21,1]*testpts$burn30low + betas[22,
+                                                                                                                                                                             1]*testpts$burn40low + betas[23,1]*testpts$burn60low + betas[24,1]*testpts$bu
+                                                                                                                                                                             rn10up.nt + betas[25,1]*testpts$burn20up.nt + betas[26,1]*testpts$burn30up.nt
+                                                                                                                                                                             + betas[27,1]*testpts$burn40up.nt + betas[28,1]*testpts$burn60up.nt + betas[2
+                                                                                                                                                                                                                                                           9,1]*testpts$burn10up.con + betas[30,1]*testpts$burn20up.con + betas[31,1]*te
+                                                                                                                                                                                                                                                           stpts$burn30up.con + betas[32,1]*testpts$burn40up.con + betas[33,1]*testpts$b
+                                                                                                                                                                                                                                                           urn60up.con + betas[34,1]*testpts$burn10up.dec + betas[35,1]*testpts$burn20up
+                                                                                                                                                                                                                                                           .dec + betas[36,1]*testpts$burn30up.dec + betas[37,1]*testpts$burn40up.dec +
+                                                                                                                                                                                                                                                             betas[38,1]*testpts$burn60up.dec + betas[39,1]*testpts$ld1000 + betas[40,1]*t
+                                                                                                                                                                                                                                                           estpts$exp.maj.rds + betas[41,1]*testpts$exp.poly + betas[42,1]*testpts$exp.s
+                                                                                                                                                                                                                                                           ettle)
+  
+  testpredN <- (testpred - min(map))/(max(map)-min(map))
+  
+  #Classify predictions of range points
+  bin <- ifelse(mapN < eq[[2]], 1, ifelse(mapN < eq[[3]], 2, ifelse(mapN < eq
+                                                                    [[4]], 3, ifelse(mapN < eq[[5]], 4, ifelse(mapN < eq[[6]], 5, ifelse(mapN < e
+                                                                                                                                                 q[[7]], 6, ifelse(mapN < eq[[8]], 7, ifelse(mapN < eq[[9]], 8, ifelse(mapN <
+                                                                                                                                                                                                                             eq[[10]], 9, 10)))))))))
+  #Classify predictions of test points
+  pts.use <- ifelse(testpredN < eq[[2]], 1, ifelse(testpredN < eq[[3]], 2, if
+                    else(testpredN < eq[[4]], 3, ifelse(testpredN < eq[[5]], 4, ifelse(testpredN
+                                                                                       < eq[[6]], 5, ifelse(testpredN < eq[[7]], 6, ifelse(testpredN < eq[[8]], 7,
+                                                                                                                                            ifelse(testpredN < eq[[9]], 8, ifelse(testpredN < eq[[10]], 9, 10)))))))))
+  
+  #Sum range predictions
+  freq.a <- c(sum(bin==1), sum(bin==2), sum(bin==3), sum(bin==4), sum(bin==5)
+              , sum(bin==6), sum(bin==7), sum(bin==8), sum(bin==9), sum(bin==10))
+  #Sum test pt predictions
+  freq.u <- c(sum(pts.use==1), sum(pts.use==2), sum(pts.use==3), sum(pts.use=
+                                                                      =4), sum(pts.use==5), sum(pts.use==6), sum(pts.use==7), sum(pts.use==8), sum(
+                                                                        pts.use==9), sum(pts.use==10))
+  
+  #Selection ratios
+  a <- freq.a/length(bin)
+  u <- freq.u/length(pts.use)
+  sr <- u/a
+  
+  #Calculate r for area-adjusted frequency
+  spear <- cor.test(sr, 1:10, method='spearman')
+  
+  #kfold (model-based): availability is specific to each individual caribou (
+  see Methods section in main report).
+  uAIDYr <- unique(testpts$AIDYr)
+  
+  freq.aM <- rep(0,10)
+  freq.uM <- rep(0,10)
+  binM.all <- vector()
+  pts.useM.all <- vector()
+  for(k in uAIDYr){
+    submap <- testrange[testrange$AIDYr==k,]
+    submap <- submap[complete.cases(submap),]
+    
+    mapM <- exp(betas[2,1]*submap$bryoids + betas[3,1]*submap$t.shrub + betas
+                [4,1]*submap$s.shrub + betas[5,1]*submap$t.wet + betas[6,1]*submap$s.wet + be
+                tas[7,1]*submap$h.wet + betas[8,1]*submap$herb + betas[9,1]*submap$con.open +
+                  betas[10,1]*submap$con.sp + betas[11,1]*submap$broad.d + betas[12,1]*submap$b
+                road.o + betas[13,1]*submap$mix.o + betas[14,1]*submap$mix.dens + betas[15,1]
+                *submap$water + betas[16,1]*submap$nonveg + betas[17,1]*submap$p_broad + beta
+                s[18,1]*submap$p_consparse + betas[19,1]*submap$burn10low + betas[20,1]*subma
+                p$burn20low + betas[21,1]*submap$burn30low + betas[22,1]*submap$burn40low + b
+                etas[23,1]*submap$burn60low + betas[24,1]*submap$burn10up.nt + betas[25,1]*su
+                bmap$burn20up.nt + betas[26,1]*submap$burn30up.nt + betas[27,1]*submap$burn40
+                up.nt + betas[28,1]*submap$burn60up.nt + betas[29,1]*submap$burn10up.con + be
+                tas[30,1]*submap$burn20up.con + betas[31,1]*submap$burn30up.con + betas[32,1]
+                *submap$burn40up.con + betas[33,1]*submap$burn60up.con + betas[34,1]*submap$b
+                urn10up.dec + betas[35,1]*submap$burn20up.dec + betas[36,1]*submap$burn30up.d
+                ec + betas[37,1]*submap$burn40up.dec + betas[38,1]*submap$burn60up.dec + beta
+                s[39,1]*submap$ld1000 + betas[40,1]*submap$exp.maj.rds + betas[41,1]*submap$e
+                xp.poly + betas[42,1]*submap$exp.settle)
+    
+    #Standardize
+    mapMN <- (mapM - min(mapM))/(max(mapM)-min(mapM))
+    
+    #Split range points into equal intervals from min to max. This creates de
+    cile bins based on availability
+    eqM <- classIntervals(mapMN, 10, style="quantile")
+    eqM <- eqM$brks
+    
+    yrpts <- testpts[testpts$AIDYr==k,]
+    
+    yrpred <- exp(betas[2,1]*yrpts$bryoids + betas[3,1]*yrpts$t.shrub + betas
+                  [4,1]*yrpts$s.shrub + betas[5,1]*yrpts$t.wet + betas[6,1]*yrpts$s.wet + betas
+                  [7,1]*yrpts$h.wet + betas[8,1]*yrpts$herb + betas[9,1]*yrpts$con.open + betas
+                  [10,1]*yrpts$con.sp + betas[11,1]*yrpts$broad.d + betas[12,1]*yrpts$broad.o +
+                    betas[13,1]*yrpts$mix.o + betas[14,1]*yrpts$mix.dens + betas[15,1]*yrpts$wate
+                  r + betas[16,1]*yrpts$nonveg + betas[17,1]*yrpts$p_broad + betas[18,1]*yrpts$
+                    p_consparse + betas[19,1]*yrpts$burn10low + betas[20,1]*yrpts$burn20low + bet
+                  as[21,1]*yrpts$burn30low + betas[22,1]*yrpts$burn40low + betas[23,1]*yrpts$bu
+                  rn60low + betas[24,1]*yrpts$burn10up.nt + betas[25,1]*yrpts$burn20up.nt + bet
+                  as[26,1]*yrpts$burn30up.nt + betas[27,1]*yrpts$burn40up.nt + betas[28,1]*yrpt
+                  s$burn60up.nt + betas[29,1]*yrpts$burn10up.con + betas[30,1]*yrpts$burn20up.c
+                  on + betas[31,1]*yrpts$burn30up.con + betas[32,1]*yrpts$burn40up.con + betas[
+                    33,1]*yrpts$burn60up.con + betas[34,1]*yrpts$burn10up.dec + betas[35,1]*yrpts
+                  $burn20up.dec + betas[36,1]*yrpts$burn30up.dec + betas[37,1]*yrpts$burn40up.d
+                  ec + betas[38,1]*yrpts$burn60up.dec + betas[39,1]*yrpts$ld1000 + betas[40,1]*
+                    yrpts$exp.maj.rds + betas[41,1]*yrpts$exp.poly + betas[42,1]*yrpts$exp.settle
+    )
+    
+    yrpredN <- (yrpred - min(mapM))/(max(mapM)-min(mapM))
+    
+    #Classify predictions of range points
+    binM <- ifelse(mapMN < eqM[[2]], 1, ifelse(mapMN < eqM[[3]], 2, ifelse(ma
+                                                                           pMN < eqM[[4]], 3, ifelse(mapMN < eqM[[5]], 4, ifelse(mapMN < eqM[[6]], 5, if
+                                                                                                                                                    else(mapMN < eqM[[7]], 6, ifelse(mapMN < eqM[[8]], 7, ifelse(mapMN < eqM[[9]
+                                                                                                                                                                                                                       ], 8, ifelse(mapMN < eqM[[10]], 9, 10)))))))))
+    binM.all <- c(binM.all, binM)
+    #Classify predictions of test points
+    pts.useM <- ifelse(yrpredN < eqM[[2]], 1, ifelse(yrpredN < eqM[[3]], 2, i
+                       felse(yrpredN < eqM[[4]], 3, ifelse(yrpredN < eqM[[5]], 4, ifelse(yrpredN < e
+                                                                                         qM[[6]], 5, ifelse(yrpredN < eqM[[7]], 6, ifelse(yrpredN < eqM[[8]], 7, ifel
+                                                                                                                                                          se(yrpredN < eqM[[9]], 8, ifelse(yrpredN < eqM[[10]], 9, 10)))))))))
+    pts.useM.all <- c(pts.useM.all, pts.useM)
+    
+    #Sum range predictions
+    freq.aM2 <- c(sum(binM==1), sum(binM==2), sum(binM==3), sum(binM==4), sum
+                  (binM==5), sum(binM==6), sum(binM==7), sum(binM==8), sum(binM==9), sum(binM==
+                                                                                          10))
+    #Sum test pt predictions
+    freq.uM2 <- c(sum(pts.useM==1), sum(pts.useM==2), sum(pts.useM==3), sum(p
+                  ts.useM==4), sum(pts.useM==5), sum(pts.useM==6), sum(pts.useM==7), sum(pts.us
+                                                                                         eM==8), sum(pts.useM==9), sum(pts.useM==10))
+    
+    freq.aM <- freq.aM + freq.aM2
+    freq.uM <- freq.uM + freq.uM2
+  }
+  
+  #Selection ratios
+  aM <- freq.aM/length(binM.all)
+  uM <- freq.uM/length(pts.useM.all)
+  srM <- uM/aM
+  
+  #Calculate r for area-adjusted frequency
+  spearM <- cor.test(srM, 1:10, method='spearman')
+  
+  data.frame(Iteration = i, Spearman.Corr.Map = unname(spear[[4]]), p.value
+             .Map = spear[[3]], Spearman.Corr.Model = unname(spearM[[4]]), p.value.Model =
+               spearM[[3]])
+}
+stopCluster(myCluster)
+
+#Collate results from list format to data frame
+kfold.df <- data.frame()
+for(i in c(1:10)){
+  df <- kfold.res[[i]]
+  kfold.df <- rbind.data.frame(kfold.df, df)
+}
+#kfold.df ###NOT RUN
+```
