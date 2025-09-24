@@ -2,3 +2,10 @@
 .Rhistory
 .RData
 .Ruserdata
+.Rprofile
+.secrets
+
+/data
+/outputs
+/cache
+/inputs
