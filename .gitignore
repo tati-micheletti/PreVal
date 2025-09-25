@@ -4,6 +4,7 @@
 .Ruserdata
 .Rprofile
 .secrets
+.Renviron
 
 /data
 /outputs
