@@ -1,3 +1,6 @@
 [submodule "modules/movementDataPrep"]
 	path = modules/movementDataPrep
 	url = git@github.com:tati-micheletti/movementDataPrep.git
+[submodule "modules/caribouLocPrep"]
+	path = modules/caribouLocPrep
+	url = git@github.com:tati-micheletti/caribouLocPrep.git
