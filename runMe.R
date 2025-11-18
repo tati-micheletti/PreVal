@@ -19,8 +19,8 @@ if (SpaDES.project::user("Tati")){  # ON MY WINDOWS MACHINE
   terra::terraOptions(tempdir = scratchPath)
 } 
 
-runName <- "RSF"
-centralPoint <- c(64.024641, -122.356419)
+runName <- "iSSA"
+# centralPoint <- c(64.024641, -122.356419)
 
 out <- SpaDES.project::setupProject(
   runName = runName,
@@ -50,7 +50,8 @@ out <- SpaDES.project::setupProject(
                end = 2025),
   authorizeGDrive = googledrive::drive_auth(cache = ".secrets"),
   params = list(caribouLocPrep =
-                  list(jurisdiction = "NT")
+                  list(jurisdiction = "NT",
+                       herdNT = "Dehcho Boreal Woodland Caribou")
                 ),
   packages = c(
                "googledrive", 'RCurl', 'XML', 'igraph', 'qs', 'usethis',
@@ -65,6 +66,6 @@ out <- SpaDES.project::setupProject(
   )
 )
 
-resultsRSF <- SpaDES.core::simInitAndSpades2(out)
+iSSA <- SpaDES.core::simInitAndSpades2(out)
 
 
