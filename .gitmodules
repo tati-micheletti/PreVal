@@ -4,3 +4,12 @@
 [submodule "modules/caribouLocPrep"]
 	path = modules/caribouLocPrep
 	url = git@github.com:tati-micheletti/caribouLocPrep.git
+[submodule "modules/prepTracks"]
+	path = modules/prepTracks
+	url = https://github.com/tati-micheletti/prepTracks
+[submodule "modules/prepLandscape"]
+	path = modules/prepLandscape
+	url = https://github.com/tati-micheletti/prepLandscape
+[submodule "modules/extractLand"]
+	path = modules/extractLand
+	url = https://github.com/tati-micheletti/extractLand
