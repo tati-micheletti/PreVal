@@ -6,6 +6,7 @@ getOrUpdatePkg <- function(p, minVer = "0") {
 }
 getOrUpdatePkg("Require", "1.0.1.9020")
 getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
+getOrUpdatePkg("terra")
 
 ################### SETUP
 
@@ -28,7 +29,10 @@ out <- SpaDES.project::setupProject(
                scratchPath = scratchPath,
                outputPath = file.path("outputs", runName)),
   modules =c(
-    "tati-micheletti/caribouLocPrep@main"
+    "tati-micheletti/caribouLocPrep@main",
+    'tati-micheletti/prepTracks@main',
+    'tati-micheletti/prepLandscape@main'#,
+    # 'tati-micheletti/extractLand@main'
   ),
   options = list(spades.allowInitDuringSimInit = TRUE,
                  reproducible.cacheSaveFormat = "rds",
@@ -48,24 +52,33 @@ out <- SpaDES.project::setupProject(
   ),
   times = list(start = 2025,
                end = 2025),
-  authorizeGDrive = googledrive::drive_auth(cache = ".secrets"),
+  # authorizeGDrive = googledrive::drive_auth(cache = ".secrets"),
   params = list(caribouLocPrep =
                   list(jurisdiction = "NT",
-                       herdNT = "Dehcho Boreal Woodland Caribou")
+                       herdNT = "Dehcho Boreal Woodland Caribou"),
+                .globals = list(
+                  .plots = c("png"),
+                  .studyAreaName=  "NT",
+                  jurisdiction = "NT",
+                  .useCache = c(".inputObjects"),
+                  histLandYears = 2005:2021 # go back all the way to first year of caribou data!
+                )
                 ),
-  packages = c(
-               "googledrive", 'RCurl', 'XML', 'igraph', 'qs', 'usethis',
-               "SpaDES.tools",
-               "PredictiveEcology/SpaDES.core@box (HEAD)",# 2.1.5.9022
-               "PredictiveEcology/reproducible@AI (HEAD)",# 2.1.2.9046
-               "PredictiveEcology/Require@development (>= 1.0.1)"
+  packages = c(#"googledrive", 'RCurl', 'XML', 'igraph', 'qs', 'usethis',
+               #"SpaDES.tools",
+               "purrr", # 1. First time to run: purrr was not installed so I added here. Restart the session after that.
+               "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
                ),
   useGit = "both",
   loadOrder = c(
-    "caribouLocPrep"
+    "caribouLocPrep",
+    "prepTracks",
+    "prepLandscape"#,
+    # "extractLand"
   )
 )
 
 iSSA <- SpaDES.core::simInitAndSpades2(out)
+
 
 
