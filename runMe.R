@@ -31,8 +31,8 @@ out <- SpaDES.project::setupProject(
   modules =c(
     "tati-micheletti/caribouLocPrep@main",
     'tati-micheletti/prepTracks@main',
-    'tati-micheletti/prepLandscape@main'#,
-    # 'tati-micheletti/extractLand@main'
+    'tati-micheletti/prepLandscape@main',
+    'tati-micheletti/extractLand@main'
   ),
   options = list(spades.allowInitDuringSimInit = TRUE,
                  reproducible.cacheSaveFormat = "rds",
@@ -53,28 +53,33 @@ out <- SpaDES.project::setupProject(
   times = list(start = 2025,
                end = 2025),
   # authorizeGDrive = googledrive::drive_auth(cache = ".secrets"),
-  params = list(caribouLocPrep =
-                  list(jurisdiction = "NT",
+  params = list(caribouLocPrep = list(
+                       jurisdiction = "NT",
                        herdNT = "Dehcho Boreal Woodland Caribou"),
+                prepTracks = list(
+                       rate = amt::hours(8),
+                       tolerance = amt::minutes(240),
+                       probsfilter = 0.9),
+                extractLand = list(
+                       histLandYears = 2005:2021), # go back all the way to first year of caribou data!),
                 .globals = list(
-                  .plots = c("png"),
-                  .studyAreaName=  "NT",
-                  jurisdiction = "NT",
-                  .useCache = c(".inputObjects"),
-                  histLandYears = 2005:2021 # go back all the way to first year of caribou data!
+                       .plots = c("png"),
+                       .studyAreaName=  "NT",
+                       jurisdiction = "NT",
+                       .useCache = c(".inputObjects")
                 )
                 ),
   packages = c(#"googledrive", 'RCurl', 'XML', 'igraph', 'qs', 'usethis',
                #"SpaDES.tools",
-               "purrr", # 1. First time to run: purrr was not installed so I added here. Restart the session after that.
+               "purrr", "amt", # 1. First time to run: purrr was not installed so I added here. Restart the session after that.
                "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
                ),
   useGit = "both",
   loadOrder = c(
     "caribouLocPrep",
     "prepTracks",
-    "prepLandscape"#,
-    # "extractLand"
+    "prepLandscape",
+    "extractLand"
   )
 )
 
