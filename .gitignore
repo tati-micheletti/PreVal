@@ -5,8 +5,9 @@
 .Rprofile
 .secrets
 .Renviron
-
+/scratch
 /data
 /outputs
 /cache
 /inputs
+/_targets
