@@ -2,7 +2,8 @@ checkMovebankCredentials <- function(out){
   if ("caribouLocPrep" %in% out$modules){
     if (any("YT" %in% out$params$caribouLocPrep$jurisdiction,
             "NT" %in% out$params$caribouLocPrep$jurisdiction)){
-      if (out$params$caribouLocPrep$MoveBankUser == "" || out$params$caribouLocPrep$MoveBankPass == "") {
+      if (is.null(out$params$caribouLocPrep$MoveBankUser) || out$params$caribouLocPrep$MoveBankUser == "" || 
+          is.null(out$params$caribouLocPrep$MoveBankPass) || out$params$caribouLocPrep$MoveBankPass == "") {
         errorMessage <- paste(
           "Error: You requested data hosted in MoveBank, but Movebank credentials were not found.",
           "To solve this, please follow these steps in your R console:",
