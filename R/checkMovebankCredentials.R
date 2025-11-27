@@ -24,5 +24,6 @@ checkMovebankCredentials <- function(out){
       } else {
         message("Movebank credentials seem to be correctly set.")
       }
-}
+    }
+  }
   }
