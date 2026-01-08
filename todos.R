@@ -6,7 +6,8 @@
 # [X] Rory said I shouldn't worry about it.... Moving on: trying to create sim$extractedLand. It seems it will take DAYS to create the tables... about 10 hours PER YEAR! This is like 2 years per day... Gee. I will be done on the 26th of December if everything works...
 # [X] Julie says I do need to figure out why x2_ are NA... So I am currently in prepTracks. The problem is the function `random_steps`... But why I am currently investigating. 
 # [X] RA! I know what happened:  In the original data there are still steps with 0 length. These are creating the problem. They can only be checked, however, once the tracks are created! So that's what I am doing now in prepTracks: I clean these up, and reconstruct the data for creating the random steps. It should be good to go now. 
-# [ ] Move on to preparing the data to use in a RSF or iSSA. Better have it in tables?! This is probably done in the iSSA module, but needs to be a separate module so can be used with another (i.e., RSF) model! --> No, it is done in extractLand! I just need to change the function, as I need the yearly, not 5 year version. --> This is actually done already in prepTracks. I implemented 3 different ways of adding the 
+# [X] Move on to preparing the data to use in a RSF or iSSA. Better have it in tables?! This is probably done in the iSSA module, but needs to be a separate module so can be used with another (i.e., RSF) model! --> No, it is done in extractLand! I just need to change the function, as I need the yearly, not 5 year version. --> This is actually done already in prepTracks. I implemented 3 different ways of adding the aggregated data
+# [ ] Run the modules and get the covariates!!!
 # [ ] Run the iSSA's as per table (Important: the model has to retain AT LEAST indv random effects. Interactions can be removed as per global models)
 # [ ] Run the RSF's as per table -- use similar structure as iSSA
 # [ ] Summarize the findings
