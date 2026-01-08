@@ -47,7 +47,7 @@ out <- SpaDES.project::setupProject(
                  reproducible.inputPaths = if (user("tmichele")) "~/data" else paths[["inputPath"]],
                  reproducible.destinationPath = if (user("tmichele")) "~/data" else paths[["outputPath"]],
                  reproducible.useMemoise = TRUE,
-                 reproducible.showSimilar =TRUE,
+                 reproducible.showSimilar =FALSE,
                  terra_default = list(memfrac = 0) 
   ),
   times = list(start = 2025,
