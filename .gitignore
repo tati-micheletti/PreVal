@@ -11,3 +11,9 @@
 /cache
 /inputs
 /_targets
+cache
+inputs
+outputs/iSSA
+.Rdata
+.secret
+.Restart*
