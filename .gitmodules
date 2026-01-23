@@ -10,3 +10,12 @@
 [submodule "modules/extractLand"]
 	path = modules/extractLand
 	url = https://github.com/tati-micheletti/extractLand
+[submodule "modules/caribouiSSA"]
+	path = modules/caribouiSSA
+	url = https://github.com/tati-micheletti/caribouiSSA
+[submodule "modules/caribouNN_Global"]
+	path = modules/caribouNN_Global
+	url = git@github.com:tati-micheletti/caribouNN_Global.git
+[submodule "modules/caribouNN"]
+	path = modules/caribouNN
+	url = git@github.com:tati-micheletti/caribouNN.git
