@@ -17,3 +17,4 @@ outputs/iSSA
 .Rdata
 .secret
 .Restart*
+outputs/NN
