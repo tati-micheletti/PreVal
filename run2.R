@@ -1,3 +1,6 @@
+
+print("RUNNING 2 COVARIATE MODELS...")
+
 getOrUpdatePkg <- function(p, minVer = "0") {
   if (!isFALSE(try(packageVersion(p) < minVer, silent = TRUE) )) {
     repo <- c("predictiveecology.r-universe.dev", getOption("repos"))
@@ -89,26 +92,20 @@ out <- SpaDES.project::setupProject(
     ),
     caribouNN = list(
       learningRate = 0.001,
-      useSavedPlan = TRUE, # If any changes in experiment or capping is done, this needs to be FALSE
-      maxClu = 52,
-      modComplex = "all") 
+      useSavedPlan = TRUE,
+      maxClu = Inf,
+      modComplex = 2,
+      useFuture = TRUE)
   ),
   packages = c("terra", "purrr", "amt",
                "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
   ),
   useGit = "both",
   loadOrder = c(
-    # "caribouLocPrep",
-    # "prepTracks",
-    # "prepLandscape",
-    # "extractLand",
     "caribouNN_Global",
     "caribouNN"
   ),
-  objects = list(extractedVariables = data.table::fread(file.path("outputs", runName, "extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv"))) # SHORTCUTTING!!! 
-  # The right way would be to generate the table + run the model. However: the name extractedVariables in
-  # the iSSA is actually extractedLand produced by extractLand module. This needs fixing (i.e., maybe 
-  # just providing a synonym?)
+  objects = list(extractedVariables = data.table::fread(file.path("outputs", runName, "extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv")))
 )
 
 source("https://raw.githubusercontent.com/tati-micheletti/PreVal/refs/heads/main/R/checkMovebankCredentials.R")
