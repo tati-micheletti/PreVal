@@ -93,7 +93,7 @@ out <- SpaDES.project::setupProject(
     caribouNN = list(
       learningRate = 0.001,
       useSavedPlan = TRUE,
-      maxClu = Inf,
+      maxClu = 45,
       modComplex = Inf,
       useFuture = TRUE) # If any changes in experiment or capping is done, this needs to be FALSE
   ),

@@ -93,7 +93,7 @@ out <- SpaDES.project::setupProject(
     caribouNN = list(
       learningRate = 0.001,
       useSavedPlan = TRUE,
-      maxClu = Inf,
+      maxClu = 45,
       modComplex = 2,
       useFuture = TRUE)
   ),
