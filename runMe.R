@@ -11,8 +11,9 @@ getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
 
 if (SpaDES.project::user("tmichele")){ # ON BC
   scratchPath <- Require::checkPath("~/scratch", create = TRUE)
-  if (getwd() != "/home/tmichele/projects/PreVal") setwd("~/projects/preVal/")
-} 
+  if (getwd() != "/home/tmichele/projects/PreVal" && 
+      getwd() != "/export/home/tmichele/projects/PreVal") setwd("~/projects/PreVal/")
+}
 if (SpaDES.project::user("Tati")){  # ON MY WINDOWS MACHINE
   scratchPath <- Require::checkPath("scratch", create = TRUE)
 } 
