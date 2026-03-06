@@ -96,7 +96,8 @@ out <- SpaDES.project::setupProject(
       useSavedPlan = TRUE,
       maxClu = 45,
       modComplex = 10,
-      useFuture = TRUE) # If any changes in experiment or capping is done, this needs to be FALSE
+      useFuture = FALSE,
+    useGPU = TRUE) # If any changes in experiment or capping is done, this needs to be FALSE
   ),
   packages = c("terra", "purrr", "amt",
                "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
