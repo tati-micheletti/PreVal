@@ -19,3 +19,6 @@
 [submodule "modules/caribouNN"]
 	path = modules/caribouNN
 	url = git@github.com:tati-micheletti/caribouNN.git
+[submodule "modules/birdsNN_Global"]
+	path = modules/birdsNN_Global
+	url = https://github.com/tati-micheletti/birdsNN_Global
