@@ -45,9 +45,11 @@ a t interval and an **exact sign-flip permutation p-value**. The per-year values
 log2 complexity, horizon, window length) is fitted when lme4 is available.
 
 ## Primary endpoints (fixed now)
-- **P1 (H1)**: the DIFFERENCE in optimism between regimes, optimism(Tainted) - optimism(PreVal) and optimism(Internal) -
-  optimism(PreVal), pooled over complexity and splits. (Not "optimism > 0": the reported loss is the minimum over epochs on
-  the early-stopping set, so every regime's optimism is biased upwards.) Prediction: > 0.
+- **P1 (H1, does not involve PreVal)**: is cross-validation a misleading measure of forecast quality? On the identical test
+  strata, realized loss of the CV-trained forecast (FutureTainted) minus the reference CV (Internal), pooled over complexity
+  and splits. Prediction: > 0 (forecasting is harder than the CV reference suggests). Secondary: the CV regime's own reported
+  error against its forecast error (FutureTainted optimism = realized - reported; carries the early-stopping selection bias,
+  see LIMITATIONS.md) and how much more optimistic CV is than PreVal (difference in optimism; descriptive).
 - **P2 (H2)**: paired difference in realized loss on the identical test strata, PreVal - Tainted and PreVal - Internal, pooled.
   Prediction: <= 0.
 - **P3 (H3, comparative)**: does adding covariates hurt LESS under PreVal than under the CV comparators? Per split, the slope of
@@ -61,7 +63,7 @@ animals PreVal saw in training), selection regret and realized loss of the compl
 penalty versus the simplest model, top-1 skill, training behaviour (best epoch, stopped by patience or cap).
 
 ## What would count as refuting each hypothesis (fixed in advance)
-- H1 fails if P1 is not positive for both comparators (t interval across test years includes 0 or is negative).
+- H1 fails if P1 is not positive (t interval across test years includes 0 or is negative).
 - H2 fails if P2 is positive for either comparator with the interval excluding 0. If PreVal is only worse overall but not on
   the same-information subset, that is reported as an information-deficit effect, not as support.
 - H3 is not supported if the slope difference PreVal - comparator is not negative for both comparators (t interval across
@@ -75,7 +77,8 @@ penalty versus the simplest model, top-1 skill, training behaviour (best epoch, 
 3. Equivalence test against the margin added (it was announced but not implemented); the primary H3 test is the
    comparative slope difference between regimes (amendment 2, same day, before results were read: an earlier draft gated H3 on
    PreVal skill above chance, removed because the comparison between regimes is what matters).
-4. H1 primary contrast = difference in optimism (see P1).
+4. H1 primary contrast = FutureTainted forecast loss minus the reference CV (Internal) on identical test strata; PreVal does not
+   enter H1 (amendment 3, same day, before results were read, after Tati corrected the first operationalisation).
 5. Selection regret: regimes compared by paired differences, not separate bootstraps.
 6. Added: horizon and window-length analyses, same-information contrast, top-1 skill, training-behaviour table, mixed model.
 7. 20-covariate level and the cap-extension pass.

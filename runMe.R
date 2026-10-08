@@ -145,6 +145,7 @@ out <- SpaDES.project::setupProject(
       earlyStopPatience = envNum("PREVAL_PATIENCE", 10),
       useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", # REFIT: PREVAL_NEW_PLAN=1 rebuilds the plan (e.g. to add a complexity level); existing models are kept
       complexityLevels = if (nzchar(Sys.getenv("PREVAL_COMPLEXITY"))) as.numeric(strsplit(Sys.getenv("PREVAL_COMPLEXITY"), ",")[[1]]) else c(2, 5, 10, Inf),
+      onlyMissing = Sys.getenv("PREVAL_ONLY_MISSING") == "1", # REFIT: mop-up of models without a result
       extendFrom = envNum("PREVAL_EXTEND_FROM", NA), # REFIT: re-train models that stopped at this epoch cap (with PREVAL_EPOCHS larger)
       startYear = 2013,
       runSlice = sliceTask,                          # REFIT: one SLURM array task = one slice of the models

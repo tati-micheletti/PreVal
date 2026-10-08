@@ -8,8 +8,8 @@ H2 (PreVal is more honest and forecasts better) and H3 (PreVal: complexity does 
 1. **The "reported" error is also the early-stopping set.** Each regime reports the validation loss at its best epoch, and
    that same set chose the epoch. The minimum over epochs is optimistically biased in EVERY regime, including PreVal.
    *Consequence:* optimism = realized - reported is positive even for PreVal; "PreVal optimism = 0" must not be expected
-   or tested. *Handled:* the primary H1 contrast is the DIFFERENCE in optimism between regimes (same bias in all), not
-   optimism > 0. *Not handled:* the absolute size of the optimism. A fully clean version needs an untouched hold-out fold
+   or tested, and the CV regime's own optimism (H1 secondary) is partly this selection bias. *Handled:* the primary H1 test
+   does not use the reported error: it compares forecast loss with the reference CV on identical test strata. *Not handled:* the absolute size of the optimism. A fully clean version needs an untouched hold-out fold
    per regime (design change and rerun); proposed for the bird and tree datasets.
 2. **PreVal's "reported" error refers to year e, the realized error to year T.** Year-to-year drift enters PreVal's
    optimism, by design (that is what a forecaster would see), but it makes PreVal's optimism noisier than the CV regimes'.
