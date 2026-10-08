@@ -106,6 +106,15 @@ with and without it. Figure 10 shows, per regime and complexity, whether validat
 future-year loss worsens (the hypothesis for why the status quo overfits). Together with the 300-epoch cap this tests the
 truncation explanation. Models trained before this change (first pass) do not have it.
 
+**Do complex models pay off under PreVal? (added after the first look; exploratory for the caribou first pass).**
+Table `H3_shape_per_regime`, measure END, regime FutureUnseen: realized loss at 30 minus 2 covariates = -0.0052 [-0.0098, -0.0007]
+across 8 test years, 7 of 8 years negative, exact sign-flip p = 0.039 (not corrected for the several shape questions asked).
+A small benefit (about 0.005 in loss, on top of a total skill over chance of roughly 0.015-0.02), not a large one.
+Pre-specified for the caribou replicates/second pass, birds and simulated trees: (a) one-sided END(PreVal) < 0 with the
+per-year interval and the mixed model; (b) the loss of the complexity CHOSEN by PreVal's own validation loss minus the loss of
+the simplest model (table `H3_penalty_vs_simplest` / selection tables). The simulated-tree data can additionally vary the TRUE
+complexity of the generating process, which is the cleanest test of whether complexity pays when it truly exists.
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
