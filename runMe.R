@@ -4,35 +4,68 @@ getOrUpdatePkg <- function(p, minVer = "0") {
     install.packages(p, repos = repo)
   }
 }
-getOrUpdatePkg("Require", "1.0.1.9020")
-getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
+# REFIT (same pattern as birdMonitor): packages are installed ONCE from an EVE login node with
+#   PREVAL_ON_EVE=1 PREVAL_INSTALL_ONLY=1 Rscript runMe.R
+# into the project library that setupProject() creates (~/.local/share/R/PreVal/packages/...). A cluster job
+# (SLURM_JOB_ID set) installs nothing: it only adds that library to .libPaths() and loads what is there.
+installOnly <- Sys.getenv("PREVAL_INSTALL_ONLY") == "1"
+isJob <- nzchar(Sys.getenv("SLURM_JOB_ID"))
+if (isJob) {
+  libs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "PreVal", "packages", "*", "*"))
+  if (length(libs)) .libPaths(c(libs, .libPaths()))
+}
+# REFIT: inside a cluster job nothing is installed (compute nodes have throttled internet): the installer
+# eve/00_install_packages.R (run once on a login node) guarantees these versions
+if (!isJob) {
+  getOrUpdatePkg("Require", "1.0.1.9020")
+  getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
+}
 
 ################### SETUP
 
+# REFIT: on EVE (inside a SLURM job, or set PREVAL_ON_EVE=1 on the login node) nothing is installed or downloaded
+onEVE <- nzchar(Sys.getenv("SLURM_JOB_ID")) || nzchar(Sys.getenv("PREVAL_ON_EVE"))
+# REFIT: stage: prep (global ranking + design, once) | train (one SLURM array task) | analyze | all (small tests)
+stage <- Sys.getenv("PREVAL_STAGE", "all")
+stopifnot(stage %in% c("prep", "train", "analyze", "all"))
+envNum <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) as.numeric(v) else default }
+sliceTask <- if (stage == "train") c(envNum("SLURM_ARRAY_TASK_ID", 1), envNum("SLURM_ARRAY_TASK_COUNT", 1)) else c(NA_real_, NA_real_)
+
 if (SpaDES.project::user("tmichele")){ # ON BC
   scratchPath <- Require::checkPath("~/scratch", create = TRUE)
-  if (getwd() != "/home/tmichele/projects/PreVal" && 
+  if (getwd() != "/home/tmichele/projects/PreVal" &&
       getwd() != "/export/home/tmichele/projects/PreVal") setwd("~/projects/PreVal/")
 }
 if (SpaDES.project::user("Tati")){  # ON MY WINDOWS MACHINE
   scratchPath <- Require::checkPath("scratch", create = TRUE)
-} 
+}
+if (onEVE){  # REFIT: ON EVE (code in ~/projects/PreVal; data and outputs on /work, never in /home)
+  workPath <- Sys.getenv("PREVAL_WORK", file.path("/work", Sys.getenv("USER"), "preval"))
+  scratchPath <- Require::checkPath(file.path(workPath, "scratch"), create = TRUE)
+  if (basename(getwd()) != "PreVal") setwd("~/projects/PreVal/")
+}
 
 runName <- "NN"
 # centralPoint <- c(64.024641, -122.356419)
+# REFIT: where outputs go and where the (read-only) extracted-features table is
+outPath <- if (nzchar(Sys.getenv("PREVAL_OUT"))) Sys.getenv("PREVAL_OUT") else file.path("outputs", runName)
+tablePath <- if (nzchar(Sys.getenv("PREVAL_TABLE"))) Sys.getenv("PREVAL_TABLE") else
+  file.path("outputs", runName, "extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv")
 
 out <- SpaDES.project::setupProject(
   runName = runName,
   paths = list(projectPath = "PreVal",
                scratchPath = scratchPath,
-               outputPath = file.path("outputs", runName)),
+               outputPath = outPath),
   modules =c(
     # "tati-micheletti/caribouLocPrep@main",
     # 'tati-micheletti/prepTracks@main',
     # 'tati-micheletti/prepLandscape@main',
     # 'tati-micheletti/extractLand@main',
-    'tati-micheletti/caribouNN_Global@main',
-    'tati-micheletti/caribouNN@main'
+    # REFIT: the refit modules are used from the local modules/ folder (feature/refit-disjoint-sets).
+    # GitHub references would download over (and could overwrite) local, uncommitted work.
+    if (stage %in% c("prep", "all")) "caribouNN_Global",
+    "caribouNN"
   ),
   options = list(future.globals.maxSize = 6000*1024^2,
                  tempdir = scratchPath, # terra::terraOptions
@@ -40,19 +73,19 @@ out <- SpaDES.project::setupProject(
                  reproducible.cacheSaveFormat = "rds",
                  gargle_oauth_email = if (user("tmichele")||user("Tati")) "tati.micheletti@gmail.com" else NULL,
                  gargle_oauth_cache = ".secrets",
-                 gargle_oauth_client_type = "web", # Without "web", google authentication didn't work when running non-interactively! "installed" should be used in non-server systems 
+                 gargle_oauth_client_type = "web", # Without "web", google authentication didn't work when running non-interactively! "installed" should be used in non-server systems
                  use_oob = TRUE, # TRUE
                  repos = "https://cloud.r-project.org",
                  spades.project.fast = FALSE,
                  spades.recoveryMode = 0,
-                 spades.useRequire = TRUE,
+                 spades.useRequire = !isJob, # REFIT: never install packages from inside a cluster job
                  spades.scratchPath = scratchPath,
                  reproducible.gdalwarp = TRUE,
                  reproducible.inputPaths = if (user("tmichele")) "~/data" else paths[["inputPath"]],
                  reproducible.destinationPath = if (user("tmichele")) "~/data" else paths[["outputPath"]],
                  reproducible.useMemoise = TRUE,
                  reproducible.showSimilar =FALSE,
-                 terra_default = list(memfrac = 0) 
+                 terra_default = list(memfrac = 0)
   ),
   times = list(start = 2025,
                end = 2025),
@@ -86,34 +119,57 @@ out <- SpaDES.project::setupProject(
     ),
     caribouNN_Global = list(
       rerunPrepData = FALSE,
-      scheduleGlobalRSS = FALSE
+      scheduleGlobalRSS = FALSE,
+      startYear = 2013,                              # REFIT: 2012 and earlier are not used
+      epoch = envNum("PREVAL_GLOBAL_EPOCHS", 100)
     ),
     caribouNN = list(
-      learningRate = 0.001,
-      useSavedPlan = TRUE, # If any changes in experiment or capping is done, this needs to be FALSE
-      maxClu = 52,
-      modComplex = "all") 
+      stage = c(prep = "design", train = "train", analyze = "analyze", all = "all")[[stage]], # REFIT
+      learningRate = envNum("PREVAL_LR", 0.001),     # the value used in the original runs
+      epoch = envNum("PREVAL_EPOCHS", 50),
+      earlyStopPatience = envNum("PREVAL_PATIENCE", 10),
+      useSavedPlan = TRUE, # If any change in the design is made, this needs to be FALSE (and the old plan deleted)
+      startYear = 2013,
+      runSlice = sliceTask,                          # REFIT: one SLURM array task = one slice of the models
+      torchThreads = envNum("PREVAL_THREADS", 1),
+      modComplex = "all")
   ),
-  packages = c("terra", "purrr", "amt",
+  packages = if (isJob) NULL else c("terra", "purrr", "amt",
                "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
   ),
-  useGit = "both",
+  useGit = FALSE, # REFIT: modules are local (see above)
   loadOrder = c(
     # "caribouLocPrep",
     # "prepTracks",
     # "prepLandscape",
     # "extractLand",
-    "caribouNN_Global",
+    if (stage %in% c("prep", "all")) "caribouNN_Global",
     "caribouNN"
   ),
-  objects = list(extractedVariables = data.table::fread(file.path("outputs", runName, "extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv"))) # SHORTCUTTING!!! 
+  # REFIT: the table is only needed (and read, never written) by the prep stage
+  objects = if (stage %in% c("prep", "all") && !installOnly) list(extractedVariables = data.table::fread(tablePath)) else list() # SHORTCUTTING!!!
   # The right way would be to generate the table + run the model. However: the name extractedVariables in
-  # the iSSA is actually extractedLand produced by extractLand module. This needs fixing (i.e., maybe 
+  # the iSSA is actually extractedLand produced by extractLand module. This needs fixing (i.e., maybe
   # just providing a synonym?)
 )
 
-source("https://raw.githubusercontent.com/tati-micheletti/PreVal/refs/heads/main/R/checkMovebankCredentials.R")
-checkMovebankCredentials(out)
+# REFIT: PREVAL_INSTALL_ONLY=1: setupProject() above has just installed the packages of runMe.R and of the modules.
+# Add libtorch (CPU), check, and stop without running anything (run once from an EVE login node).
+if (installOnly) {
+  if (!requireNamespace("torch", quietly = TRUE)) install.packages("torch", repos = "https://cloud.r-project.org")
+  if (!torch::torch_is_installed()) torch::install_torch()
+  stillMissing <- Filter(function(p) !requireNamespace(p, quietly = TRUE),
+                         c("data.table", "torch", "SpaDES.core", "SpaDES.project", "reproducible", "amt"))
+  if (length(stillMissing)) stop("Could not install: ", paste(stillMissing, collapse = ", "))
+  message("PREVAL_INSTALL_ONLY=1: packages and libtorch are installed (torch ", as.character(packageVersion("torch")),
+          "). Nothing was run.")
+  quit(save = "no", status = 0)
+}
+
+if (!onEVE) { # REFIT: needs the internet; not used by the refit modules anyway
+  source("https://raw.githubusercontent.com/tati-micheletti/PreVal/refs/heads/main/R/checkMovebankCredentials.R")
+  checkMovebankCredentials(out)
+}
 
 # a<-SpaDES.core::restartSpades()
 
