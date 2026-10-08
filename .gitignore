@@ -18,3 +18,6 @@ outputs/iSSA
 .secret
 .Restart*
 outputs/NN
+
+# downloaded results (caribou data cannot be disclosed): never commit
+results_*/
