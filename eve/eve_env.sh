@@ -11,6 +11,9 @@
 #   /data/birds/PreVal/trees/...         later (simulated forest growth)
 # Caribou and bird data cannot be disclosed: keep the folders private (see eve/README_EVE.md, step 2).
 
+# Settings of this run (written by submit_refit.sh, path passed with sbatch --export): sourced FIRST so they win over the defaults below.
+if [ -n "${PREVAL_RUN_ENV:-}" ] && [ -f "${PREVAL_RUN_ENV}" ]; then source "${PREVAL_RUN_ENV}"; fi
+
 export EVE_R_MODULE="${EVE_R_MODULE:-GCC/13.3.0 OpenMPI/5.0.5 R/4.5.1 GDAL/3.10.3 CMake ImageMagick/7.1.1-38 UDUNITS/2.2.28}"
 module load ${EVE_R_MODULE}
 if ! command -v Rscript >/dev/null 2>&1; then
@@ -26,4 +29,5 @@ export PREVAL_WORK="${PREVAL_WORK:-/work/${USER}/preval}"                     # 
 # RAM disk avoidance
 export TMPDIR="${PREVAL_WORK}/tmp/${SLURM_JOB_ID:-interactive}"
 mkdir -p "${TMPDIR}" "${PREVAL_OUT}" "${PREVAL_WORK}/logs"
+echo "[preval settings] OUT=${PREVAL_OUT} COMPLEXITY=${PREVAL_COMPLEXITY:-default} REPLICATES=${PREVAL_REPLICATES:-default} EPOCHS=${PREVAL_EPOCHS:-default} NEW_PLAN=${PREVAL_NEW_PLAN:-0} RUN_ENV=${PREVAL_RUN_ENV:-none}" >&2
 trap 'rm -rf "${TMPDIR}"' EXIT

@@ -45,7 +45,7 @@ done
 
 echo
 echo "--- Time and memory of finished training tasks (tighten --mem-per-cpu / --time with this) ---"
-JOB=$(sacct -u "$USER" -S today -n -X --format=JobID,JobName%14 2>/dev/null | grep preval-train | head -1 | awk '{print $1}' | sed 's/_.*//')
+JOB=$(sacct -u "$USER" -S today -n -X --format=JobID,JobName%14 2>/dev/null | grep preval-train | tail -1 | awk '{print $1}' | sed 's/_.*//')
 if [ -n "$JOB" ]; then
   sacct -j "$JOB" -n -P --format=JobID,State,Elapsed,MaxRSS 2>/dev/null | grep -E '[.]batch[|]COMPLETED' | \
     awk -F'|' '{v=$4; gsub("K","",v); if (v+0>m) m=v+0; n++} END{if (n>0) printf "  %d finished tasks; largest peak memory %.1f GB\n", n, m/1048576; else print "  (no finished task yet)"}'

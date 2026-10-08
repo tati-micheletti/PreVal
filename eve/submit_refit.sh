@@ -12,11 +12,18 @@ mkdir -p "/work/${USER}/preval/logs"
 NTASKS="${NTASKS:-100}"; MAXPAR="${MAXPAR:-50}"
 PART=(); if [ -n "${EVE_PARTITION:-}" ]; then PART=(--partition="${EVE_PARTITION}"); fi
 
-prep=$(sbatch --parsable "${PART[@]+"${PART[@]}"}" eve/eve_prep.sbatch)
+# The PREVAL_* settings typed in front of this command did NOT reach the batch jobs on EVE (2026-10-08: the second pass
+# silently ran the first-pass settings). Write them to a file and pass its PATH explicitly; eve_env.sh sources it.
+RUNENV="/work/${USER}/preval/run_env_$(date +%Y%m%d_%H%M%S).sh"
+env | grep '^PREVAL_' | sed "s/^\([^=]*\)=\(.*\)\$/export \1='\2'/" > "${RUNENV}" || true
+echo "Settings handed to every job (${RUNENV}):"; sed 's/^/  /' "${RUNENV}"; [ -s "${RUNENV}" ] || echo "  (none: defaults = first-pass settings)"
+EXPORT="--export=ALL,PREVAL_RUN_ENV=${RUNENV}"
+
+prep=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" eve/eve_prep.sbatch)
 echo "prep:    ${prep}"
-train=$(sbatch --parsable "${PART[@]+"${PART[@]}"}" --dependency=afterok:"${prep}" --kill-on-invalid-dep=yes \
+train=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --dependency=afterok:"${prep}" --kill-on-invalid-dep=yes \
           --time="${TRAIN_TIME:-02:00:00}" --array=1-"${NTASKS}"%"${MAXPAR}" eve/eve_train_array.sbatch)
 echo "train:   ${train}  (${NTASKS} tasks, at most ${MAXPAR} at once)"
-ana=$(sbatch --parsable "${PART[@]+"${PART[@]}"}" --dependency=afterok:"${train}" --kill-on-invalid-dep=yes eve/eve_analyze.sbatch)
+ana=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --dependency=afterok:"${train}" --kill-on-invalid-dep=yes eve/eve_analyze.sbatch)
 echo "analyze: ${ana}"
 echo "Monitor: squeue -u \$USER   |   logs in ./logs/"
