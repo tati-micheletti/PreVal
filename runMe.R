@@ -64,6 +64,7 @@ tablePath <- if (nzchar(Sys.getenv("PREVAL_TABLE"))) Sys.getenv("PREVAL_TABLE") 
   file.path("outputs", runName, "extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv")
 
 out <- SpaDES.project::setupProject(
+  Restart = FALSE, # REFIT (as in birdMonitor): Rscript cannot restart R after the first package install
   runName = runName,
   paths = list(projectPath = "PreVal",
                scratchPath = scratchPath,
@@ -107,7 +108,7 @@ out <- SpaDES.project::setupProject(
     caribouLocPrep = list(
       jurisdiction = "NT",
       herdNT = "Dehcho Boreal Woodland Caribou"),
-    prepTracks = list(
+    prepTracks = if (requireNamespace("amt", quietly = TRUE)) list( # REFIT: amt is not installed yet on a fresh EVE library
       minyr = 2007,
       maxyr = 2022,
       rate = amt::hours(8),
