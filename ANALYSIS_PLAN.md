@@ -1,7 +1,13 @@
 # Pre-specified analysis plan (caribou refit)
 
-Written BEFORE any refit result exists (branch `feature/caribou-refit`). Anything not listed here is
-exploratory and will be labelled as such in the paper.
+Written BEFORE any refit result was read (branch `feature/caribou-refit`). Anything not listed here is exploratory and
+will be labelled as such in the paper. See `LIMITATIONS.md` for what can go wrong and how it would bias the results.
+
+**Amendment of 2026-10-08 (made before any pooled result was read).** The first version of this plan used a bootstrap over
+test years, a train-test-gap slope for H3 and no equivalence test. A review of the analysis code found these weak
+(see "Changes" below). The only test losses seen when the amendment was made were those of six models trained for engineering
+checks (epoch cap), none pooled or compared across the design. The first-run analysis job on EVE writes tables with the
+OLD code; those tables are not to be interpreted. The amended analysis is run afterwards on the final results.
 
 ## Hypotheses
 - **H1** Random/mixed cross-validation overfits and under-reports future error.
@@ -15,49 +21,62 @@ exploratory and will be labelled as such in the paper.
 - **FutureTainted (status quo)**: the *same strata* as FutureUnseen, randomly re-allocated to train/validation (same sizes).
 - **Internal (random CV)**: train + validation drawn at random from years s..T, excluding the test strata (same sizes),
   restricted to the animals present in the PreVal/Tainted pool, so that all regimes use the same animals and the same
-  number of strata. Bursts cannot be matched without changing what the regimes are (PreVal's validation year has its own
-  bursts; random CV shares bursts between train and validation); burst counts per set are reported in `splitSummary.csv`.
+  number of strata. Bursts cannot be matched without changing what the regimes are; burst counts per set are reported (Table 1).
 - Sets are disjoint; sizes are equal across regimes; verified by `verifySplits()` before any training and
   re-verified from the saved manifests after the run (`auditSplitManifests()`).
-- Complexity ladder: the 2/5/10/30 covariates ranked by within-stratum permutation importance of a global model
-  (the ranking is the same for all regimes; it is not a selection leak for the *comparison*).
+- **Complexity ladder: 2 / 5 / 10 / 20 / 30 covariates** ranked by within-stratum permutation importance of a global model
+  (same ranking for all regimes). The 20-covariate level is added in the second pass.
+- **Training length**: patience 10, maximum 300 epochs. Models that stopped at the first pass's 50-epoch cap are re-trained
+  from scratch with the same seeds (second pass); the share of cap-stopped models and a cap-50 versus converged table are reported.
 - **Spatial arm** (subset of splits, horizon 1, test years 2018/2020/2022): 100 km blocks, 4 folds; one fold's blocks
   (+10 km buffer) are removed from every training/validation pool of every regime; the test set is the year-T strata
-  inside those blocks. Reported separately; it answers "does the result survive proper spatial blocking?".
+  inside those blocks. Reported separately; never pooled with the temporal arm.
 - Replicates: network initialisation seeds are shared across the three regimes of a cell (paired), different across cells.
 
 ## Outcome measures (cross-entropy loss, lower is better; chance = ln 11 = 2.398)
-- `reported` = the regime's own validation loss at the best epoch (what that regime would report).
-- `realized` = loss on the shared test set.
-- `optimism` = realized - reported.  `skill` = ln 11 - realized.  `trainTestGap` = realized - training loss.
+- `reported` = the regime's own validation loss at the best epoch. `realized` = loss on the shared test set.
+- `optimism` = realized - reported. `skill` = ln 11 - realized. `skillTop1` = top-1 accuracy - 1/11.
 - Seen vs unseen animals (embedding fallback = mean of trained animals) are always reported separately.
 
-## Estimands and tests
-- **H1**: optimism by regime x complexity. Prediction: optimism(Tainted), optimism(Internal) > optimism(PreVal) ~ 0, and
-  growing with complexity for Tainted/Internal.
-- **H2a**: paired difference in realized loss on the identical test strata: PreVal - Tainted, PreVal - Internal, per
-  complexity and pooled. Prediction: <= 0 (PreVal not worse).
-- **H2b (decision relevance)**: within each regime, choose the complexity with the best reported loss; compare the
-  realized loss of the chosen model across regimes and its regret versus the best complexity in hindsight.
-- **H3**: slope of realized loss and of trainTestGap on log2(number of covariates), per regime. Prediction: PreVal slope
-  of the gap ~ 0 (equivalence margin set to 0.005 loss per doubling, fixed now), Tainted/Internal slopes > 0.
-- Absolute skill is shown next to every contrast. If PreVal skill is indistinguishable from chance for a complexity
-  level, H3 is *not* claimed for that level (no "no overfitting because nothing was learned").
+## Inference
+The independent unit is the **test year**. Every estimate is averaged within test year first; across years we report the mean,
+a t interval and an **exact sign-flip permutation p-value**. The per-year values are always plotted (forest plots). No bootstrap
+(too few clusters). A mixed model on the split-level contrasts (random intercepts for test year and split; fixed effects for
+log2 complexity, horizon, window length) is fitted when lme4 is available.
 
-## Uncertainty
-Percentile bootstrap over **test years** (the independent unit; splits sharing a test year share their test strata),
-2000 resamples, 95% intervals. Within-split paired contrasts use the identical test strata. Per-stratum losses and burst ids
-are saved so burst-clustered intervals can be added.
+## Primary endpoints (fixed now)
+- **P1 (H1)**: the DIFFERENCE in optimism between regimes, optimism(Tainted) - optimism(PreVal) and optimism(Internal) -
+  optimism(PreVal), pooled over complexity and splits. (Not "optimism > 0": the reported loss is the minimum over epochs on
+  the early-stopping set, so every regime's optimism is biased upwards.) Prediction: > 0.
+- **P2 (H2)**: paired difference in realized loss on the identical test strata, PreVal - Tainted and PreVal - Internal, pooled.
+  Prediction: <= 0.
+- **P3 (H3)**: slope of realized loss on log2(number of covariates) per regime, from the per-split fits, with a two one-sided
+  equivalence test against +/- 0.005 loss per doubling (90% t interval across test years inside the margin).
+Secondary (descriptive): contrasts per complexity, per horizon and window length, same-information contrast (test strata of
+animals PreVal saw in training), selection regret and realized loss of the complexity chosen by each regime's reported loss,
+penalty versus the simplest model, top-1 skill, training behaviour (best epoch, stopped by patience or cap).
 
 ## What would count as refuting each hypothesis (fixed in advance)
-- H1 fails if optimism(Tainted) and optimism(Internal) do not exceed optimism(PreVal) (95% interval includes 0 or is negative).
-- H2 fails if PreVal - Tainted and PreVal - Internal realized-loss contrasts are positive with intervals excluding 0.
-- H3 fails if the PreVal slope of trainTestGap is positive with an interval excluding the equivalence margin.
+- H1 fails if P1 is not positive for both comparators (t interval across test years includes 0 or is negative).
+- H2 fails if P2 is positive for either comparator with the interval excluding 0. If PreVal is only worse overall but not on
+  the same-information subset, that is reported as an information-deficit effect, not as support.
+- H3 is not supported if the PreVal slope's interval is not inside the equivalence margin, or if its PreVal skill is
+  indistinguishable from chance at the complexity levels compared.
+
+## Changes in the amendment (and why)
+1. Bootstrap over ~8 test years -> exact sign-flip test and t interval (bootstrap with so few clusters is unreliable).
+2. H3 headline `trainTestGap` slope dropped: PreVal stops early (low epoch), the random-split regimes train longer, so their
+   training loss is lower by construction; the gap is not comparable across regimes. Kept only as an unlabelled secondary column.
+3. Equivalence test against the margin added (it was announced but not implemented).
+4. H1 primary contrast = difference in optimism (see P1).
+5. Selection regret: regimes compared by paired differences, not separate bootstraps.
+6. Added: horizon and window-length analyses, same-information contrast, top-1 skill, training-behaviour table, mixed model.
+7. 20-covariate level and the cap-extension pass.
 
 ## Sensitivity (pre-specified)
-1. Spatial arm (above). 2. `matchAnimals = FALSE` (Internal may use every animal of its longer window). 3. Seen-animal-only test loss.
-4. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
+1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
+5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
 
 ## Provenance
-Every seed (splits, models, spatial blocks, global model, importance, bootstrap) is written to `seedRegistry.csv`;
-every model has a `_provenance.rds` (seeds, RNG kind, R/torch versions, host, SLURM ids); the run has `runProvenance_*.rds`.
+Every seed (splits, models, spatial blocks, global model, importance) is written to `seedRegistry.csv`; every model has a
+`_provenance.rds` (seeds, RNG kind, R/torch versions, host, SLURM ids); the run has `runProvenance_*.rds`.

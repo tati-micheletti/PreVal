@@ -143,7 +143,9 @@ out <- SpaDES.project::setupProject(
       learningRate = envNum("PREVAL_LR", 0.001),     # the value used in the original runs
       epoch = envNum("PREVAL_EPOCHS", 50),
       earlyStopPatience = envNum("PREVAL_PATIENCE", 10),
-      useSavedPlan = TRUE, # If any change in the design is made, this needs to be FALSE (and the old plan deleted)
+      useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", # REFIT: PREVAL_NEW_PLAN=1 rebuilds the plan (e.g. to add a complexity level); existing models are kept
+      complexityLevels = if (nzchar(Sys.getenv("PREVAL_COMPLEXITY"))) as.numeric(strsplit(Sys.getenv("PREVAL_COMPLEXITY"), ",")[[1]]) else c(2, 5, 10, Inf),
+      extendFrom = envNum("PREVAL_EXTEND_FROM", NA), # REFIT: re-train models that stopped at this epoch cap (with PREVAL_EPOCHS larger)
       startYear = 2013,
       runSlice = sliceTask,                          # REFIT: one SLURM array task = one slice of the models
       torchThreads = envNum("PREVAL_THREADS", 1),
