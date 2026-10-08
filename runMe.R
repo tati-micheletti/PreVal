@@ -10,9 +10,12 @@ getOrUpdatePkg <- function(p, minVer = "0") {
 # (SLURM_JOB_ID set) installs nothing: it only adds that library to .libPaths() and loads what is there.
 installOnly <- Sys.getenv("PREVAL_INSTALL_ONLY") == "1"
 isJob <- nzchar(Sys.getenv("SLURM_JOB_ID"))
+birdLibs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "birdMonitor", "packages", "*", "*"))
 if (isJob) {
   libs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "PreVal", "packages", "*", "*"))
   if (length(libs)) .libPaths(c(libs, .libPaths()))
+  # fallback only (searched LAST): packages that exist in birdMonitor's working library but not in PreVal's
+  if (length(birdLibs)) .libPaths(c(.libPaths(), birdLibs))
 }
 # REFIT: inside a cluster job nothing is installed (compute nodes have throttled internet); the one-time install
 # (eve/setup_eve.sh, login node) guarantees these versions
@@ -146,7 +149,8 @@ out <- SpaDES.project::setupProject(
       torchThreads = envNum("PREVAL_THREADS", 1),
       modComplex = "all")
   ),
-  packages = if (isJob) NULL else c("terra", "purrr", "amt",
+  packages = if (isJob) NULL else if (onEVE) c(  # REFIT: on EVE only what the refit modules need (amt needs gmp/gsl, unused here)
+               "PredictiveEcology/SpaDES.core@development") else c("terra", "purrr", "amt",
                "PredictiveEcology/SpaDES.core@development"# REFIT: was @box; @development is what birdMonitor installs on EVE and what the refit modules were tested with (SpaDES.core 3.2.x)
   ),
   useGit = FALSE, # REFIT: modules are local (see above)
@@ -170,9 +174,9 @@ out <- SpaDES.project::setupProject(
 if (installOnly) {
   pe <- "https://predictiveecology.r-universe.dev"
   needed <- c("data.table", "torch", "SpaDES.core", "SpaDES.project", "reproducible")
-  # setupProject() can skip packages it considers installed or fails on one of them without stopping (same as in
-  # birdMonitor/runMe.R): install whatever is still missing here, with visible errors
-  missing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), c(needed, "amt"))
+  # setupProject() can skip packages or fail on one of them without stopping (same as in birdMonitor/runMe.R):
+  # install whatever is still missing here, with visible errors
+  missing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), needed)
   if (length(missing)) {
     message("Installing packages that setupProject() did not install: ", paste(missing, collapse = ", "))
     for (p in missing) tryCatch(install.packages(p, repos = c(PE = pe, CRAN = "https://cloud.r-project.org")),
@@ -180,12 +184,20 @@ if (installOnly) {
   }
   if (requireNamespace("torch", quietly = TRUE) && !torch::torch_is_installed()) torch::install_torch()
   stillMissing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), needed)
+  if (length(stillMissing)) {
+    for (p in stillMissing) message("WHY ", p, " cannot be loaded: ",
+                                    tryCatch({ loadNamespace(p); "no error?" }, error = function(e) conditionMessage(e)))
+    if (length(birdLibs)) {
+      message("Trying birdMonitor's library as a fallback (searched last): ", paste(birdLibs, collapse = " | "))
+      .libPaths(c(.libPaths(), birdLibs))
+      stillMissing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), needed)
+    }
+  }
   if (length(stillMissing)) stop("Could not install: ", paste(stillMissing, collapse = ", "),
                                  ". Library paths: ", paste(.libPaths(), collapse = " | "))
-  if (!requireNamespace("amt", quietly = TRUE))
-    message("NOTE: amt is not installed. It is only used by the prepTracks parameters, which this run does not use.")
   message("PREVAL_INSTALL_ONLY=1: packages and libtorch are installed (torch ", as.character(packageVersion("torch")),
-          ", SpaDES.core ", as.character(packageVersion("SpaDES.core")), "). Nothing was run.")
+          ", SpaDES.core ", as.character(packageVersion("SpaDES.core")), " from ", find.package("SpaDES.core"),
+          "). Nothing was run.")
   quit(save = "no", status = 0)
 }
 
