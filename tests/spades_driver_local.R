@@ -52,6 +52,9 @@ caribouNN <- list(
   complexityLevels = numv(envv("PREVAL_COMPLEXITY", "2,5,10,Inf")),
   spatialTestYears = numv(envv("PREVAL_SPATIAL_YEARS", "2018,2020,2022")),
   runSlice = slice, torchThreads = as.numeric(envv("PREVAL_THREADS", "1")),
+  featureSetArm = envv("PREVAL_FEATURE_SETS", "") == "1",
+  featureSetNames = envv("PREVAL_FS_SETS", "habitatOnly,habitatFirst,movementFirst,randomA,randomB"),
+  featureSetLevels = envv("PREVAL_FS_LEVELS", "2,5,10,20"),
   useGPU = nzchar(Sys.getenv("PREVAL_GPU", "")))
 global <- list(startYear = common$startYear, epoch = as.numeric(envv("PREVAL_GLOBAL_EPOCHS", "100")),
                useGPU = nzchar(Sys.getenv("PREVAL_GPU", "")), scheduleGlobalRSS = FALSE)
