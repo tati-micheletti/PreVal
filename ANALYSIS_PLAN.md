@@ -100,6 +100,12 @@ What the caribou first pass already shows (exploratory, chosen after seeing the 
 excluding 0; at the most complex level the difference is small overall and emerges at long horizons (+0.011 at horizon 5, not
 significant). These are hypotheses to be confirmed by the caribou replicates (new initialisation seeds) and the other datasets.
 
+**Mechanism diagnostic (added with amendment 4).** Every model now also logs the future-year test loss after each epoch
+(`diagLoss`). It is diagnostic only: it never enters stopping, scheduling or selection, and a test shows the fit is identical
+with and without it. Figure 10 shows, per regime and complexity, whether validation loss keeps improving while the
+future-year loss worsens (the hypothesis for why the status quo overfits). Together with the 300-epoch cap this tests the
+truncation explanation. Models trained before this change (first pass) do not have it.
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
