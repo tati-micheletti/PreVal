@@ -44,9 +44,12 @@ for f in $(ls -t "${LOG}"/train_*_*.err 2>/dev/null | head -8); do
 done
 
 echo
-echo "--- Memory and time of finished tasks (tighten --mem-per-cpu / --time with this) ---"
-JOB=$(squeue -u "$USER" -n preval-train -h -o "%A" | head -1)
-[ -n "$JOB" ] && sacct -j "$JOB" -X --format=JobID,State,Elapsed,MaxRSS -n 2>/dev/null | head -5 | sed 's/^/  /'
-sacct -u "$USER" -S today -n -X --format=JobName%14,JobID,State,Elapsed,MaxRSS 2>/dev/null | grep preval | tail -6 | sed 's/^/  /'
+echo "--- Time and memory of finished training tasks (tighten --mem-per-cpu / --time with this) ---"
+JOB=$(sacct -u "$USER" -S today -n -X --format=JobID,JobName%14 2>/dev/null | grep preval-train | head -1 | awk '{print $1}' | sed 's/_.*//')
+if [ -n "$JOB" ]; then
+  sacct -j "$JOB" -n -P --format=JobID,State,Elapsed,MaxRSS 2>/dev/null | grep '\.batch|COMPLETED' | \
+    awk -F'|' '{v=$4; gsub("K","",v); if (v+0>m) m=v+0; n++} END{if (n>0) printf "  %d finished tasks; largest peak memory %.1f GB\n", n, m/1048576; else print "  (no finished task yet)"}'
+  sacct -j "$JOB" -n -P -X --format=State,Elapsed 2>/dev/null | grep COMPLETED | awk -F'|' '{split($2,a,":"); s=a[1]*3600+a[2]*60+a[3]; if (s>m) m=s; t+=s; n++} END{if (n>0) printf "  longest task %d min, average %d min\n", m/60, t/n/60}'
+fi
 echo
 echo "Logs: ${LOG}    Outputs: ${OUT}"

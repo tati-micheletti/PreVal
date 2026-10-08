@@ -50,8 +50,12 @@ log2 complexity, horizon, window length) is fitted when lme4 is available.
   the early-stopping set, so every regime's optimism is biased upwards.) Prediction: > 0.
 - **P2 (H2)**: paired difference in realized loss on the identical test strata, PreVal - Tainted and PreVal - Internal, pooled.
   Prediction: <= 0.
-- **P3 (H3)**: slope of realized loss on log2(number of covariates) per regime, from the per-split fits, with a two one-sided
-  equivalence test against +/- 0.005 loss per doubling (90% t interval across test years inside the margin).
+- **P3 (H3, comparative)**: does adding covariates hurt LESS under PreVal than under the CV comparators? Per split, the slope of
+  realized loss on log2(number of covariates) is fitted for each regime; the primary quantity is the slope DIFFERENCE,
+  slope(PreVal) - slope(Tainted) and slope(PreVal) - slope(Internal), pooled over splits. Prediction: < 0 (a smaller complexity
+  penalty under PreVal). This is a comparison between regimes and does not require any regime to be above chance.
+  Secondary: each regime's own slope with a two one-sided equivalence test against +/- 0.005 loss per doubling (absolute
+  "no penalty" claim) and the penalty versus the simplest model by complexity level.
 Secondary (descriptive): contrasts per complexity, per horizon and window length, same-information contrast (test strata of
 animals PreVal saw in training), selection regret and realized loss of the complexity chosen by each regime's reported loss,
 penalty versus the simplest model, top-1 skill, training behaviour (best epoch, stopped by patience or cap).
@@ -60,14 +64,17 @@ penalty versus the simplest model, top-1 skill, training behaviour (best epoch, 
 - H1 fails if P1 is not positive for both comparators (t interval across test years includes 0 or is negative).
 - H2 fails if P2 is positive for either comparator with the interval excluding 0. If PreVal is only worse overall but not on
   the same-information subset, that is reported as an information-deficit effect, not as support.
-- H3 is not supported if the PreVal slope's interval is not inside the equivalence margin, or if its PreVal skill is
-  indistinguishable from chance at the complexity levels compared.
+- H3 is not supported if the slope difference PreVal - comparator is not negative for both comparators (t interval across
+  test years includes 0 or is positive). The absolute claim "no complexity penalty under PreVal" needs the equivalence test
+  and is reported as such; skill above chance is always REPORTED next to it but does not gate the comparative claim.
 
 ## Changes in the amendment (and why)
 1. Bootstrap over ~8 test years -> exact sign-flip test and t interval (bootstrap with so few clusters is unreliable).
 2. H3 headline `trainTestGap` slope dropped: PreVal stops early (low epoch), the random-split regimes train longer, so their
    training loss is lower by construction; the gap is not comparable across regimes. Kept only as an unlabelled secondary column.
-3. Equivalence test against the margin added (it was announced but not implemented).
+3. Equivalence test against the margin added (it was announced but not implemented); the primary H3 test is the
+   comparative slope difference between regimes (amendment 2, same day, before results were read: an earlier draft gated H3 on
+   PreVal skill above chance, removed because the comparison between regimes is what matters).
 4. H1 primary contrast = difference in optimism (see P1).
 5. Selection regret: regimes compared by paired differences, not separate bootstraps.
 6. Added: horizon and window-length analyses, same-information contrast, top-1 skill, training-behaviour table, mixed model.

@@ -46,9 +46,11 @@ H2 (PreVal is more honest and forecasts better) and H3 (PreVal: complexity does 
 11. **One network initialisation per cell.** Training noise is averaged over splits, not estimated separately.
     Replicates for a subset are possible (`nReplicates`).
 12. **Cross-entropy over 11 candidates measures relative habitat selection, not absolute habitat quality.** The skill
-    above chance is small (about 0.05-0.13 in loss, a few points of top-1 accuracy). *Consequence for H3:* "no
-    overfitting under PreVal" is easier to show when little is learned. *Handled:* skill is reported next to every
-    contrast; H3 is not claimed for a complexity level whose PreVal skill is indistinguishable from chance.
+    above chance is small (about 0.05-0.13 in loss, a few points of top-1 accuracy). *Consequence:* the claims that matter
+    here are COMPARISONS between regimes (PreVal against the CV comparators), which stay valid when all regimes are close
+    to chance. What a small skill limits is the ABSOLUTE statement "PreVal shows no complexity penalty" (a flat curve near
+    chance is easy to obtain). *Handled:* the comparative slope difference is the primary H3 test; skill is reported next to
+    every contrast so readers can judge the absolute statement themselves.
 
 ## C. Scope limitations
 
