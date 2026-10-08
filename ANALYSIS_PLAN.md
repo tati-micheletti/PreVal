@@ -115,6 +115,17 @@ per-year interval and the mixed model; (b) the loss of the complexity CHOSEN by 
 the simplest model (table `H3_penalty_vs_simplest` / selection tables). The simulated-tree data can additionally vary the TRUE
 complexity of the generating process, which is the cleanest test of whether complexity pays when it truly exists.
 
+## Follow-up experiment A: does the status-quo hump follow the covariates or the count? (pre-specified before any data)
+Run after the second pass, on the same splits (temporal arm, 120 splits), for the two forecasting regimes only (PreVal and the
+status quo; random CV is not a forecast and is never compared with PreVal). Covariate sets (R/featureSets.R): `habitatOnly`
+(18 habitat covariates, the movement/interaction covariates removed = the ablation), `habitatFirst`, `movementFirst`, `randomA`,
+`randomB`; levels 2, 5, 10, 20 (18 for habitatOnly); the main importance-ordered ladder is the reference.
+Outcome per set: PEAK and END of the penalty curve (same definitions as amendment 4) per regime, and PreVal minus status quo.
+Predictions that would support each reading: hypothesis B (step-length interactions carry non-transferable signal): hump absent in
+`habitatOnly`, present and early in `movementFirst`; hypothesis C (stable habitat signal pulls the curve back): the return at high
+counts appears when habitat covariates are added last; "it follows the count (effective capacity/training time)": the hump
+appears in every ordering at similar levels. Any other outcome is reported as it is. 1 replicate per cell; exploratory.
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
