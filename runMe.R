@@ -14,9 +14,20 @@ if (isJob) {
   libs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "PreVal", "packages", "*", "*"))
   if (length(libs)) .libPaths(c(libs, .libPaths()))
 }
-# REFIT: inside a cluster job nothing is installed (compute nodes have throttled internet): the installer
-# eve/00_install_packages.R (run once on a login node) guarantees these versions
+# REFIT: inside a cluster job nothing is installed (compute nodes have throttled internet); the one-time install
+# (eve/setup_eve.sh, login node) guarantees these versions
 if (!isJob) {
+  # Non-interactive R (Rscript on a cluster) has no default CRAN mirror, and EVE's system library is read-only
+  # (same handling as birdMonitor/runMe.R)
+  cranRepo <- getOption("repos")["CRAN"]
+  if (is.null(cranRepo) || is.na(cranRepo) || cranRepo == "@CRAN@") options(repos = c(CRAN = "https://cloud.r-project.org"))
+  if (!any(file.access(.libPaths(), 2) == 0)) {
+    userLib <- Sys.getenv("R_LIBS_USER")
+    if (!nzchar(userLib)) userLib <- file.path("~", "R", "library")
+    dir.create(userLib, recursive = TRUE, showWarnings = FALSE)
+    .libPaths(c(userLib, .libPaths()))
+    message("No writable R library found; using ", userLib)
+  }
   getOrUpdatePkg("Require", "1.0.1.9020")
   getOrUpdatePkg("SpaDES.project", "0.1.1.9036")
 }
@@ -135,7 +146,7 @@ out <- SpaDES.project::setupProject(
       modComplex = "all")
   ),
   packages = if (isJob) NULL else c("terra", "purrr", "amt",
-               "PredictiveEcology/SpaDES.core@box"# # OLDER VERSIONS: 2.1.5.9022 # (>= 2.1.6.9002)
+               "PredictiveEcology/SpaDES.core@development"# REFIT: was @box; @development is what birdMonitor installs on EVE and what the refit modules were tested with (SpaDES.core 3.2.x)
   ),
   useGit = FALSE, # REFIT: modules are local (see above)
   loadOrder = c(
