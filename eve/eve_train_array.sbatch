@@ -10,7 +10,7 @@
 # 1 cpu x 6G stays inside EVE's standard 6-8 GB per core. Tighten after the first tasks with sacct (MaxRSS, Elapsed).
 #SBATCH --job-name=preval-train
 #SBATCH --cpus-per-task=1
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem-per-cpu=7G
 #SBATCH --time=02:00:00
 #SBATCH --output=/work/%u/preval/logs/train_%A_%a.out
 #SBATCH --error=/work/%u/preval/logs/train_%A_%a.err
