@@ -83,6 +83,23 @@ penalty versus the simplest model, top-1 skill, training behaviour (best epoch, 
 6. Added: horizon and window-length analyses, same-information contrast, top-1 skill, training-behaviour table, mixed model.
 7. 20-covariate level and the cap-extension pass.
 
+## Amendment 4 (2026-10-08, AFTER the first look at the caribou first-pass results; disclosed as such)
+The pre-specified H3 primary test (slope of realized loss on log2 covariates, per split) was null for PreVal minus FutureTainted
+(0.000) because the status-quo curve rises from 2 to 5-10 covariates and then partly returns, so a straight line has no slope.
+The straight-line slope was a poor summary of a non-monotone curve and is kept in the output, labelled as pre-specified.
+New H3 estimands (v2), paired within split, defined for the caribou second pass AND, before any data exist, for the bird and
+simulated-tree datasets:
+- **END** = loss(most complex) - loss(simplest); **PEAK** = mean loss of the intermediate levels - loss(simplest).
+- Each regime's END and PEAK, and the differences PreVal - comparator, summarised (a) per test year (mean across years, exact
+  sign-flip, conservative) and (b) with a mixed model on all splits (random intercepts for test year and split; regime x
+  complexity interaction = difference in penalty; Wald intervals), plus per-split medians and shares.
+- Complexity effect by forecast horizon (END difference by horizon bin and the mixed model with a horizon interaction).
+- Primary confirmatory claims for the new datasets: PEAK(PreVal) - PEAK(status quo) < 0 and END(PreVal) - END(status quo) < 0.
+What the caribou first pass already shows (exploratory, chosen after seeing the figure): status-quo PEAK about +0.013 to +0.022
+(67% of splits above 0) versus about 0 for PreVal; mixed-model difference in penalty +0.021 (k=5) and +0.023 (k=10), intervals
+excluding 0; at the most complex level the difference is small overall and emerges at long horizons (+0.011 at horizon 5, not
+significant). These are hypotheses to be confirmed by the caribou replicates (new initialisation seeds) and the other datasets.
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
