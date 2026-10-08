@@ -168,13 +168,24 @@ out <- SpaDES.project::setupProject(
 # REFIT: PREVAL_INSTALL_ONLY=1: setupProject() above has just installed the packages of runMe.R and of the modules.
 # Add libtorch (CPU), check, and stop without running anything (run once from an EVE login node).
 if (installOnly) {
-  if (!requireNamespace("torch", quietly = TRUE)) install.packages("torch", repos = "https://cloud.r-project.org")
-  if (!torch::torch_is_installed()) torch::install_torch()
-  stillMissing <- Filter(function(p) !requireNamespace(p, quietly = TRUE),
-                         c("data.table", "torch", "SpaDES.core", "SpaDES.project", "reproducible", "amt"))
-  if (length(stillMissing)) stop("Could not install: ", paste(stillMissing, collapse = ", "))
+  pe <- "https://predictiveecology.r-universe.dev"
+  needed <- c("data.table", "torch", "SpaDES.core", "SpaDES.project", "reproducible")
+  # setupProject() can skip packages it considers installed or fails on one of them without stopping (same as in
+  # birdMonitor/runMe.R): install whatever is still missing here, with visible errors
+  missing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), c(needed, "amt"))
+  if (length(missing)) {
+    message("Installing packages that setupProject() did not install: ", paste(missing, collapse = ", "))
+    for (p in missing) tryCatch(install.packages(p, repos = c(PE = pe, CRAN = "https://cloud.r-project.org")),
+                                error = function(e) message("install.packages(", p, ") failed: ", conditionMessage(e)))
+  }
+  if (requireNamespace("torch", quietly = TRUE) && !torch::torch_is_installed()) torch::install_torch()
+  stillMissing <- Filter(function(p) !requireNamespace(p, quietly = TRUE), needed)
+  if (length(stillMissing)) stop("Could not install: ", paste(stillMissing, collapse = ", "),
+                                 ". Library paths: ", paste(.libPaths(), collapse = " | "))
+  if (!requireNamespace("amt", quietly = TRUE))
+    message("NOTE: amt is not installed. It is only used by the prepTracks parameters, which this run does not use.")
   message("PREVAL_INSTALL_ONLY=1: packages and libtorch are installed (torch ", as.character(packageVersion("torch")),
-          "). Nothing was run.")
+          ", SpaDES.core ", as.character(packageVersion("SpaDES.core")), "). Nothing was run.")
   quit(save = "no", status = 0)
 }
 
