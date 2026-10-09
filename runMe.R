@@ -146,6 +146,7 @@ out <- SpaDES.project::setupProject(
       useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", # REFIT: PREVAL_NEW_PLAN=1 rebuilds the plan (e.g. to add a complexity level); existing models are kept
       complexityLevels = if (nzchar(Sys.getenv("PREVAL_COMPLEXITY"))) as.numeric(strsplit(Sys.getenv("PREVAL_COMPLEXITY"), ",")[[1]]) else c(2, 5, 10, Inf),
       featureSetArm = Sys.getenv("PREVAL_FEATURE_SETS") == "1", # REFIT: follow-up arm with re-ordered/ablated covariate sets (needs a finished design)
+      regimeArm = Sys.getenv("PREVAL_REGIME_ARM"), # REFIT: extra regime on the finished design, e.g. FutureTaintedSpatial
       featureSetTag = Sys.getenv("PREVAL_FS_TAG"),
       featureSetNames = if (nzchar(Sys.getenv("PREVAL_FS_SETS"))) Sys.getenv("PREVAL_FS_SETS") else "habitatOnly,habitatFirst,movementFirst,randomA,randomB",
       featureSetLevels = if (nzchar(Sys.getenv("PREVAL_FS_LEVELS"))) Sys.getenv("PREVAL_FS_LEVELS") else "2,5,10,20",

@@ -144,6 +144,20 @@ without a habitat main effect it is smaller than in `interactionsOnly`. Any othe
 to show no penalty in any set. Exploratory; same outcomes as experiment A (penalty relative to the set's smallest level, PEAK/END,
 PreVal minus status quo).
 
+## Follow-up experiment C: is spatial blocking enough? (status quo with spatially blocked validation; pre-specified before any data; 2026-10-12)
+New regime `FutureTaintedSpatial` on the same temporal splits: the status quo's pool (PreVal's train + validation strata, years s..e),
+but the validation set is made of whole 100 km spatial blocks (random order, seeded) until PreVal's validation size is reached, and
+training excludes the validation blocks and a 10 km buffer. Same shared test set, same model seeds as the status-quo cell. Splits where
+blocking would leave less than 80% of the status-quo training set are skipped so that the comparison is not confounded by training size.
+Main covariate ladder (2, 5, 10, 20, 30), 3 replicates. Outcomes (test year as unit): forecast loss spatial-block CV minus random CV and
+PreVal minus spatial-block CV; optimism (forecast loss minus the loss the validation reported) per regime; complexity curve, PEAK and END.
+Predictions: (1) the caribou data have almost no residual spatial autocorrelation between animals (Moran's I ~ 0 in the audit), so spatial
+blocking changes little: forecast loss and optimism of spatial-block CV are close to those of random CV (differences within about 0.005);
+(2) PreVal stays better than spatial-block CV by about the PreVal-minus-status-quo difference (about -0.03); (3) the complexity hump of the
+status quo persists under spatial blocking. If spatial blocking improves the status quo (negative difference) or removes the hump, that is
+reported as it is. The birds, where spatial structure is strong, are the main test of C3; this experiment shows what spatial blocking does
+when the spatial structure is weak.
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
