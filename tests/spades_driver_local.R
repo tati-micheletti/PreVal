@@ -53,6 +53,7 @@ caribouNN <- list(
   spatialTestYears = numv(envv("PREVAL_SPATIAL_YEARS", "2018,2020,2022")),
   runSlice = slice, torchThreads = as.numeric(envv("PREVAL_THREADS", "1")),
   featureSetArm = envv("PREVAL_FEATURE_SETS", "") == "1",
+  featureSetTag = envv("PREVAL_FS_TAG", ""),
   featureSetNames = envv("PREVAL_FS_SETS", "habitatOnly,habitatFirst,movementFirst,randomA,randomB"),
   featureSetLevels = envv("PREVAL_FS_LEVELS", "2,5,10,20"),
   useGPU = nzchar(Sys.getenv("PREVAL_GPU", "")))

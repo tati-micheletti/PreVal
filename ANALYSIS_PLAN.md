@@ -126,6 +126,24 @@ Predictions that would support each reading: hypothesis B (step-length interacti
 counts appears when habitat covariates are added last; "it follows the count (effective capacity/training time)": the hump
 appears in every ordering at similar levels. Any other outcome is reported as it is. 1 replicate per cell; exploratory.
 
+## Follow-up experiment B: start covariates, end covariates and interactions (pre-specified before any data; written 2026-10-09)
+Result of experiment A: the shape of the status-quo curve depends on WHICH covariates are added, not on how many; PreVal is never
+penalised. Observation made while designing B: the 9 `*_start*` habitat covariates and the 9 `inter_logSl_x_*_start*` interaction
+terms use the covariate at the START of the step, which is identical for the 11 candidate steps of a stratum. Alone, a start
+covariate cannot tell the candidates apart; the `*_end*` covariates (measured at each candidate's end point) can. The `habitatOnly`
+set of experiment A contained 9 end and 9 start covariates.
+Sets (same 120 temporal splits, PreVal and status quo only, 1 replicate, tag `interactions`), all in the importance order of the
+interaction terms, levels 2, 4, 6, 9 (and 12, 18 for the pairs): `endOnly` (9 end covariates), `startOnly` (the 9 matching start
+covariates), `interactionsOnly` (9 interaction terms), `endPlusInteractions` (18, interleaved in pairs). 4,320 models.
+Predictions written before the data: (1) `startOnly` carries almost no step-discriminating information: both regimes near chance, and
+if constant-within-stratum covariates act as noise features, the status-quo loss rises with their number while PreVal stays flat;
+(2) `endOnly` gives the habitat-selection signal and shows little or no status-quo penalty; (3) if step-length interactions are what
+the status quo cannot validate, `interactionsOnly` shows a status-quo penalty (hump or rise) and PreVal does not; (4) in
+`endPlusInteractions` the interactions are accompanied by their end covariates; if the status-quo penalty comes from interactions
+without a habitat main effect it is smaller than in `interactionsOnly`. Any other outcome is reported as it is. PreVal is predicted
+to show no penalty in any set. Exploratory; same outcomes as experiment A (penalty relative to the set's smallest level, PEAK/END,
+PreVal minus status quo).
+
 ## Sensitivity (pre-specified)
 1. Spatial arm. 2. `matchAnimals = FALSE`. 3. Seen-animal-only test loss (same-information contrast). 4. Cap-50 versus converged.
 5. Replicates (3 initialisations) on a random 20% of splits. No pre-2013 runs.
