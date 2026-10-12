@@ -21,3 +21,4 @@ outputs/NN
 
 # downloaded results (caribou data cannot be disclosed): never commit
 results_*/
+data_birds/
