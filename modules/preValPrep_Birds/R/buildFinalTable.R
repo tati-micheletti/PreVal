@@ -35,7 +35,8 @@ harmoniseLanduse <- function(lu, mode = c("merged", "raw"), suffix = "", classes
 
 #' extract mean values of a raster at points (bilinear), named
 extractAt <- function(path, xy, prefix = NULL) {
-  r <- terra::rast(path); v <- terra::extract(r, xy, method = "bilinear"); v <- v[, -1, drop = FALSE]
+  r <- terra::rast(path); v <- terra::extract(r, xy, method = "bilinear")
+  if (identical(names(v)[1], "ID")) v <- v[, -1, drop = FALSE]      # a matrix of points returns no ID column; a SpatVector does
   if (!is.null(prefix)) names(v) <- paste0(prefix, names(v))
   data.table::as.data.table(v)
 }

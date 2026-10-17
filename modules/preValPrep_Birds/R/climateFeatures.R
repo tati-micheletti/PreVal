@@ -46,7 +46,7 @@ climateFeatures <- function(chelsa, years = 2005:2024, minYear = 2000L) {
   feats <- data.table::rbindlist(lapply(specs, function(s) agg(s[[1]], s[[2]], s[[3]], s[[4]], s[[5]])))
   # winter harshness: degree-months below freezing and number of frost months, November (previous year) to March
   w2 <- w[month %in% c(11, 12, 1, 2, 3)]; w2[, seasonYear := year + (month >= 11)]
-  harsh <- w2[, .(cold_sum_winter = sum(pmax(0, -tmean)), frost_months_winter = sum(tmin < 0)), by = .(SITE_ID, year = seasonYear)]
+  harsh <- w2[, .(cold_sum_winter = sum(pmax(0, -tmean)), frost_months_winter = as.numeric(sum(tmin < 0))), by = .(SITE_ID, year = seasonYear)]
   hw <- data.table::melt(harsh, id.vars = c("SITE_ID", "year"), variable.name = "feature", value.name = "value")
   feats <- data.table::rbindlist(list(feats, hw), use.names = TRUE)
   wide <- data.table::dcast(feats, SITE_ID + year ~ feature, value.var = "value")
