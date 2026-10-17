@@ -28,7 +28,7 @@ Amendments are dated and labelled. Anything decided after seeing results is expl
 ## Sensitivity analyses
 - S1: the same experiment with 2 km spatial thinning of the route-years.
 - S2: block size x0.5 and x2.
-- S4: pruning of correlated covariates (|r| < 0.7, birdMonitor's threshold) to check that the ladder conclusions do not depend on redundant covariates.
+- Optional, only if a reviewer asks (decided 2026-10-17 not to plan it): pruning of correlated covariates (|r| < 0.7, birdMonitor's threshold). The effective number of covariates is reported instead.
 - S3 (potential improvement, later): other algorithms on the same splits (birdMonitor's `nnet`, BRT) to see whether the conclusions depend on the network type.
 
 ## Rules
