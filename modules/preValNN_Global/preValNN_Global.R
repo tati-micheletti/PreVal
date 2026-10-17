@@ -99,9 +99,8 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
 
       # 3. block size from the residual spatial autocorrelation of a baseline model (pre-test rows only)
       pre <- tab[tab[[P(sim)$yearCol]] <= lastPilot]
-      bs <- tryCatch(blockSizeFromAutocorrelation(pre, P(sim)$response, featuresForLevel(prim, 10), unitCol = P(sim)$unitCol, yearCol = P(sim)$yearCol,
-                                                  crs = P(sim)$crs, family = if (P(sim)$responseType == "count") "nb" else "gaussian"),
-                     error = function(e) { message("Block size estimation failed: ", conditionMessage(e), " (using 100 km)"); list(rangeKm = NA_real_, blockKm = 100, nUnits = NA) })
+      bs <- blockSizeFromAutocorrelation(pre, P(sim)$response, featuresForLevel(prim, 10), unitCol = P(sim)$unitCol, yearCol = P(sim)$yearCol,
+                                         crs = P(sim)$crs, family = if (P(sim)$responseType == "count") "nb" else "gaussian")   # no silent fallback: an error stops the run
       saveRDS(bs, file.path(out, "blockSize.rds"))
       message(sprintf("preValNN_Global [%s]: block size %.0f km (autocorrelation range %.0f km); network %s, embedding %d.", sp, bs$blockKm, bs$rangeKm,
                       paste(hyper$hidden, collapse = "-"), hyper$embDim))

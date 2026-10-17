@@ -21,4 +21,4 @@ source "${SLURM_SUBMIT_DIR}/eve/eve_env.sh"
 export PREVAL_STAGE=train
 export PREVAL_THREADS=1            # one torch thread per task; the parallelism comes from the array
 cd "${PREVAL_ROOT}"
-Rscript runMe.R
+Rscript "${PREVAL_SCRIPT:-runMe.R}"   # REFIT (birds): PREVAL_SCRIPT=birds/runMe_birds.R, set by eve_env.sh when PREVAL_DATASET=birds

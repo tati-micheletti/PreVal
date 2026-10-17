@@ -13,4 +13,4 @@ mkdir -p "/work/${USER}/preval/logs"
 source "${SLURM_SUBMIT_DIR}/eve/eve_env.sh"
 export PREVAL_STAGE=analyze
 cd "${PREVAL_ROOT}"
-Rscript runMe.R
+Rscript "${PREVAL_SCRIPT:-runMe.R}"   # REFIT (birds): PREVAL_SCRIPT=birds/runMe_birds.R, set by eve_env.sh when PREVAL_DATASET=birds

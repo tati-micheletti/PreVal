@@ -25,6 +25,11 @@ export PREVAL_DATA_ROOT="${PREVAL_DATA_ROOT:-/data/birds/PreVal}"
 export PREVAL_ROOT="${PREVAL_ROOT:-$HOME/projects/PreVal}"                    # code (git clone), in /home
 export PREVAL_TABLE="${PREVAL_TABLE:-${PREVAL_DATA_ROOT}/${PREVAL_DATASET}/data/extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv}"
 export PREVAL_OUT="${PREVAL_OUT:-${PREVAL_DATA_ROOT}/${PREVAL_DATASET}/outputs/refit}"
+# REFIT (birds): same jobs, other script and data folder. Final tables (final_<species>.rds, private) live in ${PREVAL_DATA_ROOT}/birds/data.
+if [ "${PREVAL_DATASET}" = "birds" ]; then
+  export PREVAL_SCRIPT="${PREVAL_SCRIPT:-birds/runMe_birds.R}"
+  export PREVAL_FINAL="${PREVAL_FINAL:-${PREVAL_DATA_ROOT}/birds/data}"
+fi
 export PREVAL_WORK="${PREVAL_WORK:-/work/${USER}/preval}"                     # scratch and logs only
 # RAM disk avoidance
 export TMPDIR="${PREVAL_WORK}/tmp/${SLURM_JOB_ID:-interactive}"

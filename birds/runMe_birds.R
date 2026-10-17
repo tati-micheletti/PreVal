@@ -7,7 +7,13 @@
 #   PREVAL_LADDER    "" (primary ladder) | forward (sensitivity ladder from featureTable_forward.csv)
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS, PREVAL_PATIENCE, PREVAL_REPLICATES, PREVAL_START, PREVAL_END, PREVAL_MINWINDOW, PREVAL_HORIZONS,
 #   PREVAL_PILOT_EPOCHS, PREVAL_ONLY_MISSING, PREVAL_THREADS, PREVAL_NEW_PLAN
-.libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
+if (nzchar(Sys.getenv("LOCALAPPDATA"))) .libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
+if (nzchar(Sys.getenv("SLURM_JOB_ID"))) {          # cluster job: only add the project library made by the one-time install (as runMe.R does)
+  libs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "PreVal", "packages", "*", "*"))
+  if (length(libs)) .libPaths(c(libs, .libPaths()))
+  birdLibs <- Sys.glob(file.path(path.expand("~"), ".local", "share", "R", "birdMonitor", "packages", "*", "*"))
+  if (length(birdLibs)) .libPaths(c(.libPaths(), birdLibs))
+}
 envNum <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) as.numeric(v) else default }
 envChr <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v else default }
 species <- envChr("PREVAL_SPECIES", "Chloris_chloris")
