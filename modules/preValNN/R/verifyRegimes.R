@@ -2,14 +2,14 @@
 #'   L1  no case appears in two sets within a regime
 #'   L2  the test set is identical in all regimes and lies entirely in year T
 #'   L3  train/val/test sizes are equal across ALL regimes (equal training size included)
-#'   L4  FutureUnseen: train years in [s, e-1], validation = year e only
+#'   L4  FutureUnseen: train years in [s, e-v], validation = the last v years only (v = valYears)
 #'   L5  FutureTainted / Grouped / Spatial: train+val years in [s, e] and inside the PreVal pool U
 #'   L6  Internal: years in [s, T], no test case
 #'   L7  Grouped: no unit in both train and validation
 #'   L8  Spatial: no training case in a validation block or its buffer
 #'   S1  random draws are uniform: year and unit composition of the status-quo training set, the Internal draw and the
 #'       subsampled PreVal training set are consistent with their pools (|z| < zMax)
-verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = NULL, zMax = 5, minExpected = 20) {
+verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = NULL, zMax = 5, minExpected = 20, valYears = bundle$valYears %||% 1L) {
   stopifnot(isTRUE(bundle$ok))
   sp <- bundle$splits; yr <- idx$year; res <- list()
   add <- function(check, ok, detail = "") res[[length(res) + 1L]] <<- data.table::data.table(
@@ -23,8 +23,8 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
   add("L3 equal train/val/test sizes across regimes", all(apply(sz, 1, function(v) length(unique(v)) == 1)),
       paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
   u <- sp$FutureUnseen
-  add("L4 FutureUnseen train years in [s, e-1]", all(yr[rowsOf(u, "train")] >= s & yr[rowsOf(u, "train")] <= e - 1L))
-  add("L4 FutureUnseen validation = year e only", all(yr[rowsOf(u, "val")] == e))
+  add("L4 FutureUnseen train years in [s, e-v]", all(yr[rowsOf(u, "train")] >= s & yr[rowsOf(u, "train")] <= e - valYears))
+  add("L4 FutureUnseen validation = the last v years only", all(yr[rowsOf(u, "val")] > e - valYears & yr[rowsOf(u, "val")] <= e))
   Upool <- which(yr >= s & yr <= e)
   U <- Upool
   for (rg in intersect(c("FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial"), names(sp))) {
@@ -76,7 +76,7 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
 }
 
 #' Re-check ONE model's manifest right before training (guards against stale or hand-edited manifests).
-verifyRegimeManifest <- function(idx, manifest, regime, s, e, testYear, expected) {
+verifyRegimeManifest <- function(idx, manifest, regime, s, e, testYear, expected, valYears = 1L) {
   yr <- idx$year
   tr <- manifest$row[manifest$set == "train"]; va <- manifest$row[manifest$set == "val"]; te <- manifest$row[manifest$set == "test"]
   stopifnot(!anyDuplicated(manifest$row))
@@ -85,7 +85,7 @@ verifyRegimeManifest <- function(idx, manifest, regime, s, e, testYear, expected
   if (!all(yr[te] == testYear)) stop("Test cases outside the forecast year")
   tv <- c(tr, va)
   switch(regime,
-    FutureUnseen = if (!(all(yr[tr] >= s & yr[tr] <= e - 1L) && all(yr[va] == e))) stop("FutureUnseen year rules violated"),
+    FutureUnseen = if (!(all(yr[tr] >= s & yr[tr] <= e - valYears) && all(yr[va] > e - valYears & yr[va] <= e))) stop("FutureUnseen year rules violated"),
     FutureTainted = , FutureTaintedGrouped = , FutureTaintedSpatial = if (!all(yr[tv] >= s & yr[tv] <= e)) stop(regime, " year rules violated"),
     Internal = if (!all(yr[tv] >= s & yr[tv] <= testYear)) stop("Internal year rules violated"),
     stop("Unknown regime: ", regime))

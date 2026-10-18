@@ -16,7 +16,7 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
   if (!reRun && file.exists(finalPath)) { message(modelName, ": results exist and reRun = FALSE; loading."); return(data.table::fread(finalPath)) }
   t0 <- Sys.time(); idx <- store$index
   verifyRegimeManifest(idx, manifest, planRow$typeValidation, planRow$windowStart, planRow$historyEnd, planRow$testYear,
-                       c(nTrain = planRow$nTrainS, nVal = planRow$nValS, nTest = planRow$nTestS))
+                       c(nTrain = planRow$nTrainS, nVal = planRow$nValS, nTest = planRow$nTestS), valYears = planRow$valYears %||% 1L)
   trRows <- manifest$row[manifest$set == "train"]; vaRows <- manifest$row[manifest$set == "val"]; teRows <- manifest$row[manifest$set == "test"]
   tr <- storeSlice(store, trRows, features, device); va <- storeSlice(store, vaRows, features, device); te <- storeSlice(store, teRows, features, device)
   st <- scaleStats(tr$x, features)

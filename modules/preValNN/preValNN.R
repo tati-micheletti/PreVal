@@ -22,13 +22,15 @@ defineModule(sim, list(
     defineParameter("yearCol", "character", "year", NA, NA, "Year column."),
     defineParameter("startYear", "numeric", 2005, NA, NA, "First analysis year."),
     defineParameter("endYear", "numeric", 2024, NA, NA, "Last year with data."),
-    defineParameter("minWindow", "numeric", 5, 2, NA, "Minimum number of years in the history window s..e."),
-    defineParameter("horizons", "character", "1", NA, NA, "Comma-separated forecast distances T - e."),
+    defineParameter("minTrainYears", "numeric", 2, 1, NA, "Minimum number of training years of PreVal in a window s..e."),
+    defineParameter("valYears", "numeric", 1, 1, 5, "Number of validation years of PreVal (the last years of the window). 2 = two-year-validation variant."),
+    defineParameter("runTag", "character", "", NA, NA, "Suffix of the run folder, e.g. val2 for the two-year-validation arm (the ladder file is chosen separately)."),
+    defineParameter("horizons", "character", "1,2,3,4,5", NA, NA, "Comma-separated forecast distances T - e."),
     defineParameter("complexityLevels", "character", "2,5,10,15,25,35,50,Inf", NA, NA, "Comma-separated covariate counts (Inf = all)."),
     defineParameter("nReplicates", "numeric", 1, 1, 20, "Independent network initialisations per cell (same splits)."),
     defineParameter("testFraction", "numeric", 0.5, 0.05, 1, "Share of the forecast year's cases used as the shared test set."),
     defineParameter("blockKm", "numeric", NA_real_, 1, NA, "Spatial block size (km). NA = the value found by preValNN_Global (blockSize.rds)."),
-    defineParameter("bufferKm", "numeric", NA_real_, 0, NA, "Buffer around validation blocks (km). NA = blockKm / 4."),
+    defineParameter("bufferKm", "numeric", NA_real_, 0, NA, "Buffer around validation blocks (km). NA = blockKm / 8."),
     defineParameter("nFolds", "numeric", 4, 2, NA, "Number of spatial folds (blocks are assigned to folds at random)."),
     defineParameter("minTrain", "numeric", 200, 10, NA, "Minimum training cases of a split."),
     defineParameter("minVal", "numeric", 100, 10, NA, "Minimum validation cases of a split."),
@@ -72,7 +74,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       if (stage %in% c("all", "analyze")) sim <- scheduleEvent(sim, time(sim), "preValNN", "compareExperiment")
     },
     prepareExperiment = {
-      sp <- P(sim)$species; tag <- if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else ""
+      sp <- P(sim)$species; tag <- paste0(if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else "", if (nzchar(P(sim)$runTag)) paste0("_", P(sim)$runTag) else "")
       root <- file.path(outputPath(sim), sp); outDir <- file.path(root, paste0("run", tag)); dir.create(outDir, recursive = TRUE, showWarnings = FALSE)
       planPath <- file.path(outDir, "experimentPlan.csv"); manifestDir <- file.path(outDir, "splits")
       slice <- if (anyNA(P(sim)$runSlice)) NULL else P(sim)$runSlice
@@ -85,12 +87,14 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         tab <- data.table::as.data.table(sim$finalTable); idx <- buildCaseIndex(tab, P(sim)$unitCol, P(sim)$yearCol, "x", "y")
         bk <- P(sim)$blockKm
         if (is.na(bk)) bk <- readRDS(file.path(root, "blockSize.rds"))$blockKm
-        bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 4
-        des <- generatePlan(idx, startYear = P(sim)$startYear, endYear = P(sim)$endYear, minWindow = P(sim)$minWindow, horizons = num(P(sim)$horizons),
+        bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 8
+        des <- generatePlan(idx, startYear = P(sim)$startYear, endYear = P(sim)$endYear, minTrainYears = P(sim)$minTrainYears, valYears = P(sim)$valYears, horizons = num(P(sim)$horizons),
                             covariateLevels = num(P(sim)$complexityLevels), nReplicates = P(sim)$nReplicates, testFraction = P(sim)$testFraction,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
                             registryPath = file.path(outDir, "seedRegistry.csv"))
+        lp <- sim$networkSettings$lastPilotYear   # the pilot must never have seen a forecast year
+        if (!is.null(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)
         data.table::fwrite(des$plan, planPath); data.table::fwrite(des$splitSummary, file.path(outDir, "splitSummary.csv"))
         data.table::fwrite(des$checks, file.path(outDir, "splitChecks.csv"))
@@ -104,7 +108,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         stop("modComplex = ", P(sim)$modComplex, ". Available: all, ", paste(unique(sim$experimentPlan$numberOfCovariates), collapse = ", "))
     },
     trainExperiment = {
-      sp <- P(sim)$species; tag <- if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else ""
+      sp <- P(sim)$species; tag <- paste0(if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else "", if (nzchar(P(sim)$runTag)) paste0("_", P(sim)$runTag) else "")
       root <- file.path(outputPath(sim), sp); outDir <- file.path(root, paste0("run", tag))
       slice <- if (anyNA(P(sim)$runSlice)) NULL else P(sim)$runSlice
       tab <- data.table::as.data.table(sim$finalTable); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
@@ -140,7 +144,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       if (length(errs) && P(sim)$stopOnError) stop(length(errs), " model(s) failed (see ", file.path(modelDir, "errors"), ")")
     },
     compareExperiment = {
-      sp <- P(sim)$species; tag <- if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else ""
+      sp <- P(sim)$species; tag <- paste0(if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else "", if (nzchar(P(sim)$runTag)) paste0("_", P(sim)$runTag) else "")
       root <- file.path(outputPath(sim), sp); outDir <- file.path(root, paste0("run", tag))
       plan <- data.table::fread(file.path(outDir, "experimentPlan.csv"))
       done <- list.files(file.path(outDir, "testedModels"), pattern = "_finalDT\\.csv$")

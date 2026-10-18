@@ -17,7 +17,7 @@ tab[, cont := 1 + 2 * a - b + rnorm(.N, sd = 0.5)]
 feats <- c("a", "b", "n1", "n2", "n3")
 idx <- buildCaseIndex(tab)
 
-pl <- generatePlan(idx, startYear = 2005, endYear = 2016, minWindow = 5, horizons = 1, covariateLevels = c(2, Inf), blockKm = 100, bufferKm = 10,
+pl <- generatePlan(idx, startYear = 2005, endYear = 2016, minTrainYears = 4, horizons = 1, covariateLevels = c(2, Inf), blockKm = 100, bufferKm = 10,
                    minTrain = 100, minVal = 50, minTest = 50)
 check(nrow(pl$plan) > 0 && all(pl$checks$ok), sprintf("plan built, %d models, all %d gate checks pass", nrow(pl$plan), nrow(pl$checks)))
 check(uniqueN(pl$plan$typeValidation) == 5, "plan has all five regimes")

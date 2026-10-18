@@ -7,7 +7,8 @@
 #' @param grid data.table/list of configurations; columns hidden (list), embDim, dropout, lr, batchSize, weightDecay
 #' @return list(table = all configurations with their validation loss, best = the chosen hyper list, lastPilotYear)
 pilotNetwork <- function(store, features, adapter, lastPilotYear, grid = NULL, seed, epochs = 100L, earlyStopPatience = 15L,
-                         device = "cpu", zClip = 10, tolerance = 0.002, verbose = FALSE) {
+                         device = "cpu", zClip = 10, tolerance = 0.002, verbose = FALSE, idMode = c("intercept", "none", "concat")) {
+  idMode <- match.arg(idMode)
   idx <- store$index
   yrs <- sort(unique(idx$year[idx$year <= lastPilotYear]))
   if (length(yrs) < 3) stop("pilotNetwork: fewer than three pre-test years; cannot split into train and validation years")
@@ -15,8 +16,11 @@ pilotNetwork <- function(store, features, adapter, lastPilotYear, grid = NULL, s
   trRows <- which(idx$year < vaYear & idx$year <= lastPilotYear); vaRows <- which(idx$year == vaYear)
   if (is.null(grid)) {
     grid <- list()
-    for (h in list(c(32, 16), c(64, 32), c(128, 64), c(128, 64, 32))) for (e in c(0L, 8L)) for (wd in c(0, 1e-4)) for (dr in c(0, 0.1))
-      grid[[length(grid) + 1L]] <- list(hidden = h, embDim = e, weightDecay = wd, dropout = dr, lr = 0.003, batchSize = 128L)
+    # the route-information mode (none / intercept / concat) is FIXED by design, not chosen by the pilot; the pilot tunes the rest
+    for (h in list(c(32, 16), c(64, 32), c(128, 64), c(128, 64, 32))) for (wd in c(0, 1e-4)) for (dr in c(0, 0.1))
+      for (idd in if (idMode == "intercept") c(1e-4, 1e-3, 1e-2) else 0)
+        grid[[length(grid) + 1L]] <- list(hidden = h, embDim = if (idMode == "concat") 8L else 0L, idIntercept = idMode == "intercept", idDecay = idd,
+                                          weightDecay = wd, dropout = dr, lr = 0.003, batchSize = 128L)
   }
   tr <- storeSlice(store, trRows, features, device); va <- storeSlice(store, vaRows, features, device)
   st <- scaleStats(tr$x, features); tr$x <- applyScale(tr$x, st, zClip); va$x <- applyScale(va$x, st, zClip)
@@ -24,7 +28,8 @@ pilotNetwork <- function(store, features, adapter, lastPilotYear, grid = NULL, s
     hp <- grid[[i]]; hp$epochs <- epochs
     fit <- tryCatch(fitNet(adapter, hp, tr, va, store$nUnits, seed = seed, device = device, earlyStopPatience = earlyStopPatience, verbose = verbose),
                     error = function(e) NULL)
-    data.table::data.table(config = i, hidden = paste(hp$hidden, collapse = "-"), embDim = hp$embDim, weightDecay = hp$weightDecay, dropout = hp$dropout,
+    data.table::data.table(config = i, hidden = paste(hp$hidden, collapse = "-"), embDim = hp$embDim, idIntercept = isTRUE(hp$idIntercept), idDecay = hp$idDecay %||% NA_real_,
+                           weightDecay = hp$weightDecay, dropout = hp$dropout,
                            lr = hp$lr, nParams = sum(hp$hidden), valLoss = if (is.null(fit)) NA_real_ else fit$bestValLoss,
                            bestEpoch = if (is.null(fit)) NA_integer_ else fit$bestEpoch)
   })
@@ -32,7 +37,7 @@ pilotNetwork <- function(store, features, adapter, lastPilotYear, grid = NULL, s
   ok <- tab[is.finite(valLoss)]
   if (!nrow(ok)) stop("pilotNetwork: no configuration produced a finite validation loss")
   cand <- ok[valLoss <= min(valLoss) + tolerance]
-  win <- cand[order(nParams, embDim, dropout, weightDecay)][1]
+  win <- cand[order(nParams, embDim, dropout, weightDecay, -idDecay)][1]
   best <- grid[[win$config]]; best$epochs <- epochs
   list(table = tab[order(valLoss)], best = best, lastPilotYear = lastPilotYear, nTrain = length(trRows), nVal = length(vaRows), validationYear = vaYear)
 }

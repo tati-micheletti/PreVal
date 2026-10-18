@@ -41,8 +41,8 @@ applyScale <- function(x, stats, zClip = 10) {
 #' Score cases. Units absent from training use the reserved embedding row nUnits + 1 set to the MEAN of the trained units' rows
 #' (plain-R computation; trained rows are never modified). Without an embedding the id is ignored.
 scoreCases <- function(net, adapter, x, y, id, trainUnitsSeen, nUnits, chunk = 4096L) {
-  if (!is.null(net$idEmb)) {
-    W <- net$idEmb$weight
+  for (nm in c("idEmb", "idInt")) if (!is.null(net[[nm]])) {      # unseen units: the mean of the trained rows
+    W <- net[[nm]]$weight
     avg <- colMeans(as.matrix(W$detach()$cpu())[trainUnitsSeen, , drop = FALSE])
     torch::with_no_grad(W[nUnits + 1L, ]$copy_(torch::torch_tensor(avg, dtype = W$dtype, device = W$device)))
   }
@@ -71,7 +71,10 @@ fitNet <- function(adapter, hyper, tr, va, nUnits, seed, device = "cpu", patienc
   torch::torch_manual_seed(seed)
   net <- adapter$makeNet(tr$x$size(2), nUnits, hyper)$to(device = device)
   lr <- hyper$lr %||% 1e-3; batchSize <- hyper$batchSize %||% 128L; epochs <- hyper$epochs %||% 100L
-  opt <- torch::optim_adam(net$parameters, lr = lr, weight_decay = hyper$weightDecay %||% 0)
+  pn <- names(net$parameters); isId <- grepl("^idInt", pn)
+  groups <- list(list(params = unname(net$parameters[!isId]), weight_decay = hyper$weightDecay %||% 0))
+  if (any(isId)) groups[[2]] <- list(params = unname(net$parameters[isId]), weight_decay = hyper$idDecay %||% 1e-3)   # shrinkage of the route intercepts
+  opt <- torch::optim_adam(groups, lr = lr)
   seen <- sort(unique(as.integer(as.array(tr$id$cpu()))))
   n <- tr$x$size(1); history <- vector("list", epochs)
   bestVal <- Inf; bestEpoch <- 0L; bestState <- NULL; bad <- 0L; curLr <- lr; sinceBest <- 0L

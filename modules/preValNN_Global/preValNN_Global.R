@@ -24,6 +24,7 @@ defineModule(sim, list(
     defineParameter("crs", "numeric", 3035, NA, NA, "EPSG code of the x/y coordinates (projected, metres)."),
     defineParameter("lastPilotYear", "numeric", NA_real_, NA, NA, "Last pre-test year: the year before the first forecast year of the design. The pilot and the block-size range use ONLY years <= this."),
     defineParameter("pilotEpochs", "numeric", 100, 10, 500, "Epoch cap in the pilot."),
+    defineParameter("idMode", "character", "intercept", NA, NA, paste0("Route information in the network, FIXED by design: intercept (one shrunk number per route added to the log-mean; analogue of a random intercept), none (covariates only) or concat (8-d route embedding fed with the covariates).")),
     defineParameter("rankEpochs", "numeric", 100, 10, 500, "Epoch cap of the global ranking model."),
     defineParameter("rankingModes", "character", "random,forward", NA, NA, "Comma-separated ranking modes to compute; the first is the primary ladder."),
     defineParameter("rankYearsForward", "numeric", NA_real_, NA, NA, "Forward-mode ranking uses years <= this (default: lastPilotYear = strictly pre-test)."),
@@ -75,10 +76,10 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
 
       # 1. network settings: pilot on the pre-test history only
       message("preValNN_Global [", sp, "]: network pilot on years <= ", lastPilot, " ...")
-      pil <- pilotNetwork(store, feats, adapter, lastPilotYear = lastPilot, seed = seed, epochs = P(sim)$pilotEpochs, device = device, zClip = P(sim)$zClip)
+      pil <- pilotNetwork(store, feats, adapter, lastPilotYear = lastPilot, seed = seed, epochs = P(sim)$pilotEpochs, device = device, zClip = P(sim)$zClip, idMode = P(sim)$idMode)
       data.table::fwrite(pil$table, file.path(out, "networkPilot.csv"))
       hyper <- pil$best; hyper$epochs <- P(sim)$rankEpochs
-      saveRDS(c(hyper, list(lastPilotYear = lastPilot, validationYear = pil$validationYear, nTrain = pil$nTrain, nVal = pil$nVal)), file.path(out, "networkSettings.rds"))
+      saveRDS(c(hyper, list(idMode = P(sim)$idMode, lastPilotYear = lastPilot, validationYear = pil$validationYear, nTrain = pil$nTrain, nVal = pil$nVal)), file.path(out, "networkSettings.rds"))
 
       # 2. ranking(s): primary = first mode
       modes <- trimws(strsplit(P(sim)$rankingModes, ",")[[1]]); rks <- list()
@@ -102,8 +103,8 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
       bs <- blockSizeFromAutocorrelation(pre, P(sim)$response, featuresForLevel(prim, 10), unitCol = P(sim)$unitCol, yearCol = P(sim)$yearCol,
                                          crs = P(sim)$crs, family = if (P(sim)$responseType == "count") "nb" else "gaussian")   # no silent fallback: an error stops the run
       saveRDS(bs, file.path(out, "blockSize.rds"))
-      message(sprintf("preValNN_Global [%s]: block size %.0f km (autocorrelation range %.0f km); network %s, embedding %d.", sp, bs$blockKm, bs$rangeKm,
-                      paste(hyper$hidden, collapse = "-"), hyper$embDim))
+      message(sprintf("preValNN_Global [%s]: block size %.0f km (autocorrelation range %.0f km); network %s, route information: %s.", sp, bs$blockKm, bs$rangeKm,
+                      paste(hyper$hidden, collapse = "-"), P(sim)$idMode))
       sim$featurePriority <- prim; sim$networkSettings <- hyper; sim$blockKm <- bs$blockKm
     },
     warning(noEventWarning(sim)))

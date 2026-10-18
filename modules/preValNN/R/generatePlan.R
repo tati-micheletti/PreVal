@@ -5,20 +5,21 @@
 #' same pool, same shared test set, same validation size, same training size.
 #' @param idx buildCaseIndex()
 #' @param startYear,endYear analysis years (the data may start earlier; nothing before startYear is used)
-#' @param minWindow minimum number of years in the history window s..e (>= 2: train + validation year)
+#' @param minTrainYears minimum number of TRAINING years of PreVal in a window (default 2); a window s..e has at least minTrainYears + valYears years
+#' @param valYears number of validation years of PreVal (default 1; 2 = the two-year-validation variant)
 #' @param horizons forecast distances T - e to build (e.g. 1:3)
 #' @param covariateLevels complexity ladder (Inf = all)
 #' @param nReplicates independent network initialisations per cell (same splits)
 #' @param blockKm,bufferKm,nFolds spatial blocks for the spatial regime (blockKm usually from blockSizeFromAutocorrelation())
 #' @param regimes which regimes to build
 #' @return list(plan, splitSummary, checks, skipped, bundles, spatial)
-generatePlan <- function(idx, startYear, endYear, minWindow = 4L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
+generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
                          nReplicates = 1L, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL) {
   spatialSeed <- stringSeed("spatialBlocks")
   spatial <- assignBlocks(idx, blockKm = blockKm, bufferKm = bufferKm, nFolds = nFolds, seed = spatialSeed)
   registerSeeds(registryPath, "preValNN::design", "spatialBlocks", spatialSeed, "random assignment of spatial blocks to folds")
-  grid <- data.table::rbindlist(lapply(startYear:endYear, function(s) data.table::rbindlist(lapply(seq_len(max(0L, endYear - (s + minWindow - 1L))) + s + minWindow - 2L, function(e) {
+  grid <- data.table::rbindlist(lapply(startYear:endYear, function(s) data.table::rbindlist(lapply(seq_len(max(0L, endYear - (s + minTrainYears + valYears - 1L))) + s + minTrainYears + valYears - 2L, function(e) {
     Ts <- e + horizons; Ts <- Ts[Ts <= endYear]
     if (!length(Ts)) return(NULL)
     data.table::data.table(s = s, e = e, testYear = Ts)
@@ -30,9 +31,9 @@ generatePlan <- function(idx, startYear, endYear, minWindow = 4L, horizons = 1L,
   for (i in seq_len(nrow(grid))) {
     g <- grid[i]
     b <- buildRegimeSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testFraction = testFraction, minTrain = minTrain,
-                           minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, regimes = regimes)
+                           minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, regimes = regimes, valYears = valYears)
     if (!isTRUE(b$ok)) { skipped[[length(skipped) + 1L]] <- data.table::data.table(splitId = g$splitId, reason = b$reason); next }
-    checks[[length(checks) + 1L]] <- verifyRegimeSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial)
+    checks[[length(checks) + 1L]] <- verifyRegimeSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)
     summaries[[length(summaries) + 1L]] <- data.table::rbindlist(lapply(names(b$splits), function(rg) summariseRegimeSplit(idx, b$splits[[rg]], g$splitId, rg)))
     bundles[[g$splitId]] <- b
     registerSeeds(registryPath, "preValNN::splits", g$splitId, g$splitSeed, "split seed (+1 test, +2 status-quo allocation, +3 Internal draw, +10/+20 grouped/spatial pick, +30+k subsample)")
@@ -43,12 +44,12 @@ generatePlan <- function(idx, startYear, endYear, minWindow = 4L, horizons = 1L,
     g <- keep[i]; b <- bundles[[g$splitId]]
     data.table::rbindlist(lapply(names(b$splits), function(rg) data.table::data.table(
       splitId = g$splitId, typeValidation = rg, windowStart = g$s, historyEnd = g$e, testYear = g$testYear, horizon = g$testYear - g$e,
-      trainStartYear = g$s, trainEndYear = switch(rg, FutureUnseen = g$e - 1L, Internal = g$testYear, g$e),
+      valYears = valYears, trainStartYear = g$s, trainEndYear = switch(rg, FutureUnseen = g$e - valYears, Internal = g$testYear, g$e),
       nTrainS = b$sizes[["nTrain"]], nValS = b$sizes[["nVal"]], nTestS = b$sizes[["nTest"]], splitSeed = g$splitSeed)))
   }))
   plan <- data.table::rbindlist(lapply(covariateLevels, function(k) data.table::rbindlist(lapply(seq_len(nReplicates), function(r) {
     x <- data.table::copy(rows); x[, `:=`(numberOfCovariates = k, replicate = r)]; x }))))
-  plan[, groupId := paste0("Grp_", numberOfCovariates, "_", windowStart, "_", historyEnd, "_", testYear, ifelse(replicate > 1, paste0("_r", replicate), ""))]
+  plan[, groupId := paste0("Grp_", numberOfCovariates, "_", windowStart, "_", historyEnd, "_", testYear, ifelse(replicate > 1, paste0("_r", replicate), ""), ifelse(valYears > 1, paste0("_v", valYears), ""))]
   plan[, modelName := paste0(groupId, "_", typeValidation)]
   plan[, modelSeed := mapply(function(sid, k, r) stringSeed(paste(sid, "cov", k, "rep", r)), splitId, numberOfCovariates, replicate)]
   if (anyDuplicated(unique(plan[, .(splitId, numberOfCovariates, replicate, modelSeed)])$modelSeed)) stop("Hash collision between model seeds.")
@@ -84,9 +85,10 @@ auditManifests <- function(idx, plan, manifestDir, spatial) {
     p <- plan[splitId == sid][1]; rgs <- unique(plan[splitId == sid]$typeValidation)
     splits <- stats::setNames(lapply(rgs, function(rg) readManifest(manifestDir, sid, rg)[, .(row, set)]), rgs)
     sv <- if ("FutureTaintedSpatial" %in% rgs) unique(spatial$key[splits$FutureTaintedSpatial[set == "val"]$row]) else NULL
-    pools <- list(FutureUnseen = idx[year >= p$windowStart & year <= p$historyEnd - 1L]$row)
-    out[[sid]] <- verifyRegimeSplits(idx, list(ok = TRUE, splits = splits, pools = pools, spatialValBlocks = sv),
-                                     p$windowStart, p$historyEnd, p$testYear, sid, spatial = spatial)
+    v <- if (!is.null(p$valYears) && !is.na(p$valYears)) p$valYears else 1L
+    pools <- list(FutureUnseen = idx[year >= p$windowStart & year <= p$historyEnd - v]$row)
+    out[[sid]] <- verifyRegimeSplits(idx, list(ok = TRUE, splits = splits, pools = pools, spatialValBlocks = sv, valYears = v),
+                                     p$windowStart, p$historyEnd, p$testYear, sid, spatial = spatial, valYears = v)
   }
   data.table::rbindlist(out)
 }

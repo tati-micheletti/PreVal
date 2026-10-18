@@ -2,7 +2,8 @@
 #'
 #' One split = (window start s, history end e, forecast year T > e). Pool U = all cases of years s..e.
 #'  * ONE shared test set: a fixed random fraction (default 50%) of the cases of year T, identical in every regime.
-#'  * FutureUnseen (PreVal): train = years s..e-1, validation = year e.
+#'  * FutureUnseen (PreVal): train = years s..e-v, validation = the last v years e-v+1..e (v = valYears, default 1; v = 2 is the
+#'    two-year-validation variant).
 #'  * FutureTainted (status quo): the same pool U, re-allocated at random to train and validation (validation size = PreVal's).
 #'  * FutureTaintedGrouped (route-grouped CV): validation = whole units (routes, all their years in U) in random order until the
 #'    PreVal validation size is reached (the last unit is trimmed at random); a trimmed unit's other cases are NOT used for training.
@@ -36,15 +37,15 @@ REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTai
 #' @param regimes subset of REGIMES to build (FutureUnseen is always built)
 buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFraction = 0.5,
                               minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8,
-                              regimes = REGIMES) {
-  stopifnot(s <= e - 1L, e < testYear)
+                              regimes = REGIMES, valYears = 1L) {
+  stopifnot(s <= e - valYears, e < testYear, valYears >= 1L)
   yr <- idx$year
   tp <- which(yr == testYear)
   nTest <- floor(testFraction * length(tp))
   if (nTest < minTest) return(list(ok = FALSE, reason = sprintf("test set too small (%d)", nTest)))
   test <- sort(withSeed(seed + 1L, sample(tp, nTest)))
 
-  trainP <- which(yr >= s & yr <= e - 1L); valP <- which(yr == e)
+  trainP <- which(yr >= s & yr <= e - valYears); valP <- which(yr > e - valYears & yr <= e)
   U <- c(trainP, valP); nVal <- length(valP)
   if (length(trainP) < minTrain || nVal < minVal)
     return(list(ok = FALSE, reason = sprintf("train/val too small (%d/%d)", length(trainP), nVal)))
@@ -87,7 +88,7 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
     draw <- withSeed(seed + 3L, sample(intPool, nEq + nVal))
     splits$Internal <- mk(draw[(nVal + 1L):length(draw)], draw[seq_len(nVal)])
   }
-  list(ok = TRUE, reason = NA_character_, splits = splits[intersect(regimes, names(splits))],
+  list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = splits[intersect(regimes, names(splits))],
        sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)),
        poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
        spatialValBlocks = if (!is.null(pools$FutureTaintedSpatial)) unique(spatial$key[pools$FutureTaintedSpatial$val]) else NULL)

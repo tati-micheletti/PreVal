@@ -1,5 +1,7 @@
 #' RNG helpers of the generic validation engine (same behaviour as the caribou modules' helpers).
 
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
 #' Pin R's RNG algorithms so that a seed means the same thing on every machine and worker.
 pinRNG <- function() {
   suppressWarnings(RNGkind("Mersenne-Twister", "Inversion", "Rejection"))
