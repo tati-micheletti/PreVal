@@ -62,4 +62,10 @@ shares <- sapply(1:200, function(k) {
   mean(idx$year[bb$splits$FutureTainted[set == "val"]$row] == 2014) })
 poolShare <- mean(idx$year[idx$year >= 2008 & idx$year <= 2014] == 2014)
 check(abs(mean(shares) - poolShare) < 0.01, sprintf("status-quo validation draw is unbiased by year (%.3f vs pool %.3f)", mean(shares), poolShare))
+# regression: the uniformity gate must not raise false alarms when blocking leaves the draw close to the whole pool
+bad <- 0L
+for (sd in 1:60) for (e in c(2010, 2014, 2018)) {
+  bb <- buildRegimeSplits(idx, s = 2006, e = e, testYear = e + 1, seed = sd, spatial = sp)
+  if (isTRUE(bb$ok) && inherits(try(verifyRegimeSplits(idx, bb, 2006, e, e + 1, "reg", sp), silent = TRUE), "try-error")) bad <- bad + 1L }
+check(bad == 0L, sprintf("no false alarms of the uniformity gate in 180 random splits (%d)", bad))
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

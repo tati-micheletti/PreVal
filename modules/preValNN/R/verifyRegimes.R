@@ -53,6 +53,7 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
   zCheck <- function(drawRows, poolRows, key, label) {
     N <- length(poolRows); n <- length(drawRows)
     if (n >= N) return(add(label, TRUE, "draw equals pool"))
+    if (n > N - n) { drawRows <- setdiff(poolRows, drawRows); n <- N - n }   # test the smaller side: the normal approximation fails when only a few cases were left out
     pk <- table(key[poolRows]); dk <- table(key[drawRows])[names(pk)]; dk[is.na(dk)] <- 0
     p <- as.numeric(pk) / N; expd <- n * p; sdv <- sqrt(n * p * (1 - p) * (1 - n / N))
     keep <- expd >= minExpected & sdv > 0
