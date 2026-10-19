@@ -11,6 +11,7 @@
 #   PREVAL_LASTPILOT, e.g. 2008),
 #   PREVAL_MINTRAINFRAC (sanity limit: skip splits where blocking keeps less of the status-quo training pool; default 0.5, which excludes
 #   nothing for the birds; the kept share is stored per split), PREVAL_MINTRAIN_CASES (absolute minimum training cases, default 200),
+#   PREVAL_SLICE_ID / PREVAL_SLICE_COUNT (train only: run that slice instead of the SLURM array position; used for the small EVE test),
 #   PREVAL_PILOT_EPOCHS, PREVAL_ONLY_MISSING, PREVAL_THREADS, PREVAL_NEW_PLAN
 if (nzchar(Sys.getenv("LOCALAPPDATA"))) .libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
 if (nzchar(Sys.getenv("SLURM_JOB_ID"))) {          # cluster job: only add the project library made by the one-time install (as runMe.R does)
@@ -25,7 +26,10 @@ species <- envChr("PREVAL_SPECIES", "Chloris_chloris")
 stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "train", "analyze", "all"))
 outPath <- envChr("PREVAL_OUT", "outputs/birds"); finalDir <- envChr("PREVAL_FINAL", "data_birds")
 ladder <- envChr("PREVAL_LADDER", "")
-sliceTask <- if (stage == "train") c(envNum("SLURM_ARRAY_TASK_ID", 1), envNum("SLURM_ARRAY_TASK_COUNT", 1)) else c(NA_real_, NA_real_)
+sliceTask <- if (stage == "train") {
+  if (nzchar(Sys.getenv("PREVAL_SLICE_COUNT"))) c(envNum("PREVAL_SLICE_ID", 1), envNum("PREVAL_SLICE_COUNT", 1))   # explicit slice (the EVE test: 1 in 2000)
+  else c(envNum("SLURM_ARRAY_TASK_ID", 1), envNum("SLURM_ARRAY_TASK_COUNT", 1))
+} else c(NA_real_, NA_real_)
 startYear <- envNum("PREVAL_START", 2005); endYear <- envNum("PREVAL_END", 2024); minTrain <- envNum("PREVAL_MINTRAIN", 2); valYears <- envNum("PREVAL_VALYEARS", 1); runTag <- envChr("PREVAL_TAG", "")
 horizons <- envChr("PREVAL_HORIZONS", paste(1:19, collapse = ",")); idMode <- envChr("PREVAL_IDMODE", "intercept")
 # Network pilot: random hold-out over all years (default, like the covariate ranking) or strict forward (only years <= lastPilotYear;

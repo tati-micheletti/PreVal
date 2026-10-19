@@ -2,6 +2,8 @@
 # Progress of the PreVal refit on EVE (read only; changes nothing):
 #   cd ~/projects/PreVal && bash eve/status.sh
 OUT="${PREVAL_OUT:-/data/birds/PreVal/${PREVAL_DATASET:-caribou}/outputs/refit}"
+# REFIT (birds): the run folder is <out>/<species>/run[_tag]
+if [ "${PREVAL_DATASET:-}" = "birds" ]; then OUT="${OUT}/${PREVAL_SPECIES:?set PREVAL_SPECIES}/run${PREVAL_TAG:+_${PREVAL_TAG}}"; fi
 LOG="/work/${USER}/preval/logs"
 MOD="${OUT}/testedModels"
 
