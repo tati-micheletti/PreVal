@@ -35,7 +35,7 @@ defineModule(sim, list(
     defineParameter("minTrain", "numeric", 200, 10, NA, "Minimum training cases of a split."),
     defineParameter("minVal", "numeric", 100, 10, NA, "Minimum validation cases of a split."),
     defineParameter("minTest", "numeric", 100, 10, NA, "Minimum test cases of a split."),
-    defineParameter("minTrainFraction", "numeric", 0.8, 0.1, 1, "Skip splits where blocking leaves less than this share of the status-quo training pool."),
+    defineParameter("minTrainFraction", "numeric", 0.5, 0, 1, "Sanity limit: skip splits where blocking leaves less than this share of the status-quo training pool (the share is stored per split)."),
     defineParameter("rankingFile", "character", "featureTable.csv", NA, NA, "Ranking (ladder) file from preValNN_Global; e.g. featureTable_forward.csv for the sensitivity ladder."),
     defineParameter("ladderTag", "character", "", NA, NA, "Suffix for the output folders of a sensitivity run (e.g. 'forward'); empty = primary."),
     defineParameter("epoch", "numeric", 100, 1, 1000, "Maximum epochs per model (best validation epoch is kept)."),
@@ -90,12 +90,12 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 8
         des <- generatePlan(idx, startYear = P(sim)$startYear, endYear = P(sim)$endYear, minTrainYears = P(sim)$minTrainYears, valYears = P(sim)$valYears, horizons = num(P(sim)$horizons),
                             covariateLevels = num(P(sim)$complexityLevels), nReplicates = P(sim)$nReplicates, testFraction = P(sim)$testFraction,
-                            firstForecastYear = (sim$networkSettings$lastPilotYear %||% -Inf) + 1,
+                            firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
                             registryPath = file.path(outDir, "seedRegistry.csv"))
-        lp <- sim$networkSettings$lastPilotYear   # the pilot must never have seen a forecast year
-        if (!is.null(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
+        lp <- sim$networkSettings$lastPilotYear   # strict (forward) pilot only: it must never have seen a forecast year
+        if (!is.null(lp) && !is.na(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)
         data.table::fwrite(des$plan, planPath); data.table::fwrite(des$splitSummary, file.path(outDir, "splitSummary.csv"))
         data.table::fwrite(des$checks, file.path(outDir, "splitChecks.csv"))

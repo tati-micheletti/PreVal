@@ -69,6 +69,7 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
   out$contrasts_perYear <- perYear(Wl, "diff", c("contrast", "complexity"))
   Wl[, horizonBin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]
   out$contrasts_by_horizon <- byYear(Wl, "diff", c("contrast", "horizonBin"))
+  out$contrasts_by_horizon_each <- byYear(Wl, "diff", c("contrast", "horizon"))      # every forecast distance on its own
 
   out$table1_design <- M[, .(nTrain = mean(nTrain), nVal = mean(nVal), nTest = mean(nTest), unitsTrain = mean(nUnitsTrain), unitsTest = mean(nUnitsTest), models = .N), by = typeValidation]
   out$reported_realized <- data.table::rbindlist(lapply(c("reported", "realized", "optimism"), function(v) byYear(M, v, c("typeValidation", "complexity"))[, measure := v]))

@@ -22,7 +22,8 @@ defineModule(sim, list(
     defineParameter("unitCol", "character", "SITE_ID", NA, NA, "Column of the unit that repeats across years (route)."),
     defineParameter("yearCol", "character", "year", NA, NA, "Year column."),
     defineParameter("crs", "numeric", 3035, NA, NA, "EPSG code of the x/y coordinates (projected, metres)."),
-    defineParameter("lastPilotYear", "numeric", NA_real_, NA, NA, "Last pre-test year: the year before the first forecast year of the design. The pilot and the block-size range use ONLY years <= this."),
+    defineParameter("pilotMode", "character", "random", NA, NA, "random: the pilot (and the block size) use all years with a random hold-out, as the ranking does; forward: only years <= lastPilotYear (strict, never sees a forecast year)."),
+    defineParameter("lastPilotYear", "numeric", NA_real_, NA, NA, "Only for pilotMode = forward: last pre-test year (the year before the first forecast year of the design)."),
     defineParameter("pilotEpochs", "numeric", 100, 10, 500, "Epoch cap in the pilot."),
     defineParameter("idMode", "character", "intercept", NA, NA, paste0("Route information in the network, FIXED by design: intercept (one shrunk number per route added to the log-mean; analogue of a random intercept), none (covariates only) or concat (8-d route embedding fed with the covariates).")),
     defineParameter("rankEpochs", "numeric", 100, 10, 500, "Epoch cap of the global ranking model."),
@@ -70,22 +71,22 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
       store <- buildCaseStore(tab, idx, feats, P(sim)$response)
       adapter <- getAdapter(P(sim)$responseType)
       device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"
-      lastPilot <- P(sim)$lastPilotYear; if (is.na(lastPilot)) stop("preValNN_Global: set lastPilotYear (year before the first forecast year)")
+      lastPilot <- P(sim)$lastPilotYear; if (P(sim)$pilotMode == "forward" && is.na(lastPilot)) stop("preValNN_Global: pilotMode = forward needs lastPilotYear")
       seed <- as.integer(P(sim)$globalSeed)
       registerSeeds(file.path(out, "seedRegistry.csv"), "preValNN_Global", "globalSeed", seed, "pilot and ranking model seeds (+1/+2 internal)")
 
       # 1. network settings: pilot on the pre-test history only
-      message("preValNN_Global [", sp, "]: network pilot on years <= ", lastPilot, " ...")
-      pil <- pilotNetwork(store, feats, adapter, lastPilotYear = lastPilot, seed = seed, epochs = P(sim)$pilotEpochs, device = device, zClip = P(sim)$zClip, idMode = P(sim)$idMode)
+      message("preValNN_Global [", sp, "]: network pilot (", P(sim)$pilotMode, ") ...")
+      pil <- pilotNetwork(store, feats, adapter, lastPilotYear = lastPilot, mode = P(sim)$pilotMode, seed = seed, epochs = P(sim)$pilotEpochs, device = device, zClip = P(sim)$zClip, idMode = P(sim)$idMode)
       data.table::fwrite(pil$table, file.path(out, "networkPilot.csv"))
       hyper <- pil$best; hyper$epochs <- P(sim)$rankEpochs
-      saveRDS(c(hyper, list(idMode = P(sim)$idMode, lastPilotYear = lastPilot, validationYear = pil$validationYear, nTrain = pil$nTrain, nVal = pil$nVal)), file.path(out, "networkSettings.rds"))
+      saveRDS(c(hyper, list(idMode = P(sim)$idMode, pilotMode = P(sim)$pilotMode, lastPilotYear = lastPilot, validationYear = pil$validationYear, nTrain = pil$nTrain, nVal = pil$nVal)), file.path(out, "networkSettings.rds"))
 
       # 2. ranking(s): primary = first mode
       modes <- trimws(strsplit(P(sim)$rankingModes, ",")[[1]]); rks <- list()
       for (m in modes) {
         message("preValNN_Global [", sp, "]: ranking, mode = ", m, " ...")
-        ry <- if (m == "forward") { fy <- if (is.na(P(sim)$rankYearsForward)) lastPilot else P(sim)$rankYearsForward; sort(unique(idx$year[idx$year <= fy])) } else NULL
+        ry <- if (m == "forward") { fy <- if (is.na(P(sim)$rankYearsForward)) lastPilot else P(sim)$rankYearsForward; if (is.na(fy)) NULL else sort(unique(idx$year[idx$year <= fy])) } else NULL   # forward: train on the earlier 60% of the years, hold out the later ones
         rk <- rankCovariates(store, feats, adapter, hyper, seed = seed + 1L, mode = m, rankYears = ry, nRep = P(sim)$nRepImportance,
                              groupR = P(sim)$groupR, device = device, zClip = P(sim)$zClip)
         rk[, mode := m]; rk[, baselineLoss := attr(rk, "baselineLoss")]
@@ -99,7 +100,7 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
       data.table::fwrite(ev, file.path(out, "effectiveNumberOfCovariates.csv"))
 
       # 3. block size from the residual spatial autocorrelation of a baseline model (pre-test rows only)
-      pre <- tab[tab[[P(sim)$yearCol]] <= lastPilot]
+      pre <- if (is.na(lastPilot)) tab else tab[tab[[P(sim)$yearCol]] <= lastPilot]
       bs <- blockSizeFromAutocorrelation(pre, P(sim)$response, featuresForLevel(prim, 10), unitCol = P(sim)$unitCol, yearCol = P(sim)$yearCol,
                                          crs = P(sim)$crs, family = if (P(sim)$responseType == "count") "nb" else "gaussian")   # no silent fallback: an error stops the run
       saveRDS(bs, file.path(out, "blockSize.rds"))

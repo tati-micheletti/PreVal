@@ -1,7 +1,7 @@
 # Tests: covariate ranking (grouping of correlated covariates, informative first) and block size from residual autocorrelation
 suppressMessages({library(data.table); library(torch)})
 here <- dirname(normalizePath(sub("--file=", "", grep("--file=", commandArgs(FALSE), value = TRUE)[1])))
-for (f in c("seeds.R", "caseIndex.R", "adapters.R", "fitNet.R", "rankCovariates.R", "blockSize.R")) source(file.path(here, "..", "R", f))
+for (f in c("seeds.R", "caseIndex.R", "adapters.R", "fitNet.R", "rankCovariates.R", "blockSize.R", "pilotNetwork.R")) source(file.path(here, "..", "R", f))
 nFail <- 0L
 check <- function(cond, msg) { ok <- isTRUE(cond); cat(sprintf("[%s] %s\n", if (ok) "PASS" else "FAIL", msg)); if (!ok) nFail <<- nFail + 1L }
 
@@ -37,4 +37,11 @@ check(bs$rangeKm > 40 && bs$rangeKm < 200, sprintf("block size from residual aut
 noise <- copy(dat)[, z := rnorm(.N)]
 bn <- blockSizeFromAutocorrelation(noise, "z", character(0), family = "gaussian", crs = 3035, minKm = 25)
 check(bn$blockKm >= 25 && bn$rangeKm < bs$rangeKm, sprintf("white-noise residuals give a much shorter range (%.0f km) and the minimum block size", bn$rangeKm))
+# network pilot: random mode (all years) and strict forward mode, tiny grid
+g <- list(list(hidden = c(8, 4), embDim = 0L, idIntercept = FALSE, idDecay = 0, weightDecay = 0, dropout = 0, lr = 0.01, batchSize = 128L),
+          list(hidden = c(16, 8), embDim = 0L, idIntercept = TRUE, idDecay = 1e-3, weightDecay = 0, dropout = 0, lr = 0.01, batchSize = 128L))
+pr <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = NA, grid = g, seed = 1L, epochs = 15L, mode = "random")
+check(is.na(pr$validationYear) && pr$nVal == floor(0.2 * nrow(tab)) && is.finite(pr$table$valLoss[1]), "pilot (random mode) uses a random 20% of all years and returns a finite validation loss")
+pf <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = 2009, grid = g, seed = 1L, epochs = 15L, mode = "forward")
+check(pf$validationYear == 2009 && pf$nTrain == sum(tab$year < 2009), "pilot (forward mode) trains before and validates on the last pre-test year")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)
