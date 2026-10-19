@@ -6,7 +6,7 @@
 #   PREVAL_FINAL     folder with final_<species>.rds (default data_birds)
 #   PREVAL_LADDER    "" (primary ladder) | forward (sensitivity ladder from featureTable_forward.csv)
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS, PREVAL_PATIENCE, PREVAL_REPLICATES, PREVAL_START, PREVAL_END, PREVAL_MINTRAIN (default 2),
-#   PREVAL_VALYEARS (default 1; 2 = two-year validation arm, run with PREVAL_TAG=val2), PREVAL_HORIZONS (default 1,2,3,4,5),
+#   PREVAL_VALYEARS (default 1; 2 = two-year validation arm, run with PREVAL_TAG=val2), PREVAL_HORIZONS (default 1..19 = every distance the data allow),
 #   PREVAL_IDMODE (intercept | none | concat; default intercept), PREVAL_LASTPILOT (default 2008),
 #   PREVAL_MINTRAINFRAC (skip splits where blocking keeps less of the status-quo training pool; default 0.8, 0 = no rule; the kept share is
 #   stored per split), PREVAL_MINTRAIN_CASES (absolute minimum training cases, default 200),
@@ -26,7 +26,7 @@ outPath <- envChr("PREVAL_OUT", "outputs/birds"); finalDir <- envChr("PREVAL_FIN
 ladder <- envChr("PREVAL_LADDER", "")
 sliceTask <- if (stage == "train") c(envNum("SLURM_ARRAY_TASK_ID", 1), envNum("SLURM_ARRAY_TASK_COUNT", 1)) else c(NA_real_, NA_real_)
 startYear <- envNum("PREVAL_START", 2005); endYear <- envNum("PREVAL_END", 2024); minTrain <- envNum("PREVAL_MINTRAIN", 2); valYears <- envNum("PREVAL_VALYEARS", 1); runTag <- envChr("PREVAL_TAG", "")
-horizons <- envChr("PREVAL_HORIZONS", "1,2,3,4,5"); idMode <- envChr("PREVAL_IDMODE", "intercept")
+horizons <- envChr("PREVAL_HORIZONS", paste(1:19, collapse = ",")); idMode <- envChr("PREVAL_IDMODE", "intercept")
 # last pre-test year: the network pilot uses only years up to here; the design refuses any forecast year <= this (checked in preValNN).
 # 2008 = the year before the first forecast year that survives the 80% training rule with the 4.5 km buffer (to be confirmed by the plan counts).
 lastPilotYear <- envNum("PREVAL_LASTPILOT", 2008)

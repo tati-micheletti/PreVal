@@ -25,7 +25,7 @@ defineModule(sim, list(
     defineParameter("minTrainYears", "numeric", 2, 1, NA, "Minimum number of training years of PreVal in a window s..e."),
     defineParameter("valYears", "numeric", 1, 1, 5, "Number of validation years of PreVal (the last years of the window). 2 = two-year-validation variant."),
     defineParameter("runTag", "character", "", NA, NA, "Suffix of the run folder, e.g. val2 for the two-year-validation arm (the ladder file is chosen separately)."),
-    defineParameter("horizons", "character", "1,2,3,4,5", NA, NA, "Comma-separated forecast distances T - e."),
+    defineParameter("horizons", "character", paste(1:19, collapse = ","), NA, NA, "Comma-separated forecast distances T - e (default: every distance the data allow, 1 to 19)."),
     defineParameter("complexityLevels", "character", "2,5,10,15,25,35,50,Inf", NA, NA, "Comma-separated covariate counts (Inf = all)."),
     defineParameter("nReplicates", "numeric", 1, 1, 20, "Independent network initialisations per cell (same splits)."),
     defineParameter("testFraction", "numeric", 0.5, 0.05, 1, "Share of the forecast year's cases used as the shared test set."),
