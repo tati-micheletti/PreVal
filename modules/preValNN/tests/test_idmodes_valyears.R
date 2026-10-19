@@ -28,6 +28,9 @@ check(all(auditManifests(idx, pl$plan, md, pl$spatial)$ok), "audit of two-year-v
 pl1 <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1, covariateLevels = 2, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50)
 check(min(pl1$plan$historyEnd - pl1$plan$windowStart + 1L) == 3L, "valYears = 1 with 2 training years gives windows of at least 3 years")
 
+plF <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1:3, covariateLevels = 2, firstForecastYear = 2010, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50)
+check(min(plF$plan$testYear) >= 2010, "firstForecastYear: no split forecasts a year in the pilot's pre-test history")
+
 # ---- route-information modes ----
 hyper <- list(hidden = c(16, 8), embDim = 0L, lr = 0.01, batchSize = 128L, epochs = 60L, weightDecay = 0)
 runMode <- function(mode, regime, seed = 3L) {

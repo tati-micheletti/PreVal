@@ -10,17 +10,18 @@
 #' @param horizons forecast distances T - e to build (e.g. 1:3)
 #' @param covariateLevels complexity ladder (Inf = all)
 #' @param nReplicates independent network initialisations per cell (same splits)
+#' @param firstForecastYear no split forecasts an earlier year (the years before it form the pre-test history used by the network pilot)
 #' @param blockKm,bufferKm,nFolds spatial blocks for the spatial regime (blockKm usually from blockSizeFromAutocorrelation())
 #' @param regimes which regimes to build
 #' @return list(plan, splitSummary, checks, skipped, bundles, spatial)
 generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
-                         nReplicates = 1L, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
+                         nReplicates = 1L, firstForecastYear = -Inf, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL) {
   spatialSeed <- stringSeed("spatialBlocks")
   spatial <- assignBlocks(idx, blockKm = blockKm, bufferKm = bufferKm, nFolds = nFolds, seed = spatialSeed)
   registerSeeds(registryPath, "preValNN::design", "spatialBlocks", spatialSeed, "random assignment of spatial blocks to folds")
   grid <- data.table::rbindlist(lapply(startYear:endYear, function(s) data.table::rbindlist(lapply(seq_len(max(0L, endYear - (s + minTrainYears + valYears - 1L))) + s + minTrainYears + valYears - 2L, function(e) {
-    Ts <- e + horizons; Ts <- Ts[Ts <= endYear]
+    Ts <- e + horizons; Ts <- Ts[Ts <= endYear & Ts >= firstForecastYear]
     if (!length(Ts)) return(NULL)
     data.table::data.table(s = s, e = e, testYear = Ts)
   }))))

@@ -90,6 +90,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 8
         des <- generatePlan(idx, startYear = P(sim)$startYear, endYear = P(sim)$endYear, minTrainYears = P(sim)$minTrainYears, valYears = P(sim)$valYears, horizons = num(P(sim)$horizons),
                             covariateLevels = num(P(sim)$complexityLevels), nReplicates = P(sim)$nReplicates, testFraction = P(sim)$testFraction,
+                            firstForecastYear = (sim$networkSettings$lastPilotYear %||% -Inf) + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
                             registryPath = file.path(outDir, "seedRegistry.csv"))
