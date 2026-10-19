@@ -8,6 +8,8 @@
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS, PREVAL_PATIENCE, PREVAL_REPLICATES, PREVAL_START, PREVAL_END, PREVAL_MINTRAIN (default 2),
 #   PREVAL_VALYEARS (default 1; 2 = two-year validation arm, run with PREVAL_TAG=val2), PREVAL_HORIZONS (default 1,2,3,4,5),
 #   PREVAL_IDMODE (intercept | none | concat; default intercept), PREVAL_LASTPILOT (default 2008),
+#   PREVAL_MINTRAINFRAC (skip splits where blocking keeps less of the status-quo training pool; default 0.8, 0 = no rule; the kept share is
+#   stored per split), PREVAL_MINTRAIN_CASES (absolute minimum training cases, default 200),
 #   PREVAL_PILOT_EPOCHS, PREVAL_ONLY_MISSING, PREVAL_THREADS, PREVAL_NEW_PLAN
 if (nzchar(Sys.getenv("LOCALAPPDATA"))) .libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
 if (nzchar(Sys.getenv("SLURM_JOB_ID"))) {          # cluster job: only add the project library made by the one-time install (as runMe.R does)
@@ -52,5 +54,6 @@ if (stage %in% c("prep", "design", "train", "analyze", "all")) {
     epoch = envNum("PREVAL_EPOCHS", 100), earlyStopPatience = envNum("PREVAL_PATIENCE", 15), nReplicates = envNum("PREVAL_REPLICATES", 1),
     useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", onlyMissing = Sys.getenv("PREVAL_ONLY_MISSING") == "1",
     runSlice = sliceTask, torchThreads = envNum("PREVAL_THREADS", 1),
-    rankingFile = if (nzchar(ladder)) sprintf("featureTable_%s.csv", ladder) else "featureTable.csv", ladderTag = ladder, runTag = runTag))))
+    rankingFile = if (nzchar(ladder)) sprintf("featureTable_%s.csv", ladder) else "featureTable.csv", ladderTag = ladder, runTag = runTag,
+    minTrainFraction = envNum("PREVAL_MINTRAINFRAC", 0.8), minTrain = envNum("PREVAL_MINTRAIN_CASES", 200)))))
 }

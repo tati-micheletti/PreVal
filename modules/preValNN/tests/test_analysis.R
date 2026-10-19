@@ -41,4 +41,13 @@ st[, y := rnbinom(.N, mu = mu, size = 3)]
 cs <- coefficientStability(st, "y", c("stable", "flip", "noise"))
 check(cs$Feature[1] == "flip" && cs[Feature == "flip"]$I2 > 80 && cs[Feature == "stable"]$I2 < 40, sprintf("stability diagnostic flags the covariate whose coefficient changes sign (I2 %.0f vs %.0f)", cs[Feature == "flip"]$I2, cs[Feature == "stable"]$I2))
 check(cs[Feature == "flip"]$signFlips >= 8 && cs[Feature == "stable"]$signFlips == 0, "sign flips counted")
+# matched comparison of two arms (e.g. one vs two validation years): a built-in extra PreVal advantage of 0.03 in arm B must be recovered
+dB <- file.path(tempdir(), "resB"); dir.create(dB, showWarnings = FALSE)
+for (r in rows) { r2 <- data.table::copy(r); if (r2$typeValidation == "FutureUnseen") { r2[, testLossMean := testLossMean - 0.03] }; r2[, trainShare := 0.9]
+  data.table::fwrite(r2, file.path(dB, paste0(r2$modelName, "_finalDT.csv"))) }
+oB <- analyzeRegimes(dB, file.path(tempdir(), "anaB"), nCovariatesAll = 50)
+cmp <- compareValidationArms(file.path(tempdir(), "ana"), file.path(tempdir(), "anaB"))
+h2 <- cmp[contrast == "H2_PreVal_minus_Tainted"]
+check(abs(h2$estimate + 0.03) < 0.005 && h2$pSignFlip < 0.01 && h2$nYears == length(tests), sprintf("arm comparison recovers the extra PreVal advantage (%.3f, truth -0.030, %d years)", h2$estimate, h2$nYears))
+check(!is.null(oB$trainShare_summary) && oB$trainShare_summary$share80 == 1 && !is.null(oB$contrasts_pooled_share80), "share-restricted sensitivity and the training-share summary are written")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

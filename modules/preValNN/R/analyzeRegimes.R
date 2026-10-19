@@ -1,3 +1,16 @@
+#' Across-year test of a vector of yearly values: mean, t interval, exact sign-flip p-value, equivalence to +/- margin.
+.yearTest <- function(x, equivMargin = NULL) {
+  x <- x[is.finite(x)]; n <- length(x)
+  if (n == 0) return(data.table::data.table(estimate = NA_real_, lo = NA_real_, hi = NA_real_, pSignFlip = NA_real_, nYears = 0L, nPositive = 0L, equivalent = NA))
+  est <- mean(x); se <- if (n > 1) stats::sd(x) / sqrt(n) else NA_real_
+  tc <- if (n > 1) stats::qt(0.975, n - 1) else NA_real_
+  p <- NA_real_
+  if (n >= 2 && n <= 16) { sg <- as.matrix(expand.grid(rep(list(c(-1, 1)), n))); p <- mean(abs(sg %*% x / n) >= abs(est) - 1e-12) }
+  eq <- NA
+  if (!is.null(equivMargin) && n > 1) { t90 <- stats::qt(0.95, n - 1); eq <- (est - t90 * se > -equivMargin) && (est + t90 * se < equivMargin) }
+  data.table::data.table(estimate = est, lo = est - tc * se, hi = est + tc * se, pSignFlip = p, nYears = n, nPositive = sum(x > 0), equivalent = eq)
+}
+
 #' Pre-specified analysis of the five-regime experiment (see birds/ANALYSIS_PLAN_BIRDS.md). Everything is computed from the per-model
 #' result files; nothing is tuned after seeing results.
 #'
@@ -28,21 +41,12 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
   data.table::fwrite(M, file.path(outDir, "allModels.csv"))
   out <- list()
 
-  yearTest <- function(x, equivMargin = NULL) {
-    x <- x[is.finite(x)]; n <- length(x)
-    if (n == 0) return(data.table::data.table(estimate = NA_real_, lo = NA_real_, hi = NA_real_, pSignFlip = NA_real_, nYears = 0L, nPositive = 0L, equivalent = NA))
-    est <- mean(x); se <- if (n > 1) stats::sd(x) / sqrt(n) else NA_real_
-    tc <- if (n > 1) stats::qt(0.975, n - 1) else NA_real_
-    p <- NA_real_
-    if (n >= 2 && n <= 16) { sg <- as.matrix(expand.grid(rep(list(c(-1, 1)), n))); p <- mean(abs(sg %*% x / n) >= abs(est) - 1e-12) }
-    eq <- NA
-    if (!is.null(equivMargin) && n > 1) { t90 <- stats::qt(0.95, n - 1); eq <- (est - t90 * se > -equivMargin) && (est + t90 * se < equivMargin) }
-    data.table::data.table(estimate = est, lo = est - tc * se, hi = est + tc * se, pSignFlip = p, nYears = n, nPositive = sum(x > 0), equivalent = eq)
-  }
+  yearTest <- .yearTest
   byYear <- function(dt, col, by, equivMargin = NULL) { y <- dt[, .(v = mean(get(col), na.rm = TRUE)), by = c(by, "testYear")]; y[, yearTest(v, equivMargin), by = by] }
   perYear <- function(dt, col, by) dt[, .(value = mean(get(col), na.rm = TRUE)), by = c(by, "testYear")]
 
-  id <- c("splitId", "complexity", "replicate", "testYear", "horizon", "windowLength")
+  if (!"trainShare" %in% names(M)) M[, trainShare := NA_real_]
+  id <- c("splitId", "complexity", "replicate", "testYear", "horizon", "windowLength", "trainShare")
   W <- data.table::dcast(M, stats::as.formula(paste(paste(id, collapse = " + "), "~ typeValidation")), value.var = c("realized", "reported", "optimism"))
   has <- function(...) all(paste0("realized_", c(...)) %in% names(W))
   contrast <- function(name, a, b) if (has(a, b)) W[, (name) := get(paste0("realized_", a)) - get(paste0("realized_", b))]
@@ -58,6 +62,10 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
   Wl <- data.table::melt(W, id.vars = id, measure.vars = cn, variable.name = "contrast", value.name = "diff")
   out$contrasts_pooled <- byYear(Wl, "diff", "contrast")
   out$contrasts_by_complexity <- byYear(Wl, "diff", c("contrast", "complexity"))
+  if (any(!is.na(Wl$trainShare))) {      # sensitivity: only splits where blocking kept at least 80% of the status-quo training pool
+    out$contrasts_pooled_share80 <- byYear(Wl[trainShare >= 0.8], "diff", "contrast")
+    out$trainShare_summary <- W[, .(splits = .N, medianShare = stats::median(trainShare, na.rm = TRUE), minShare = min(trainShare, na.rm = TRUE), share80 = mean(trainShare >= 0.8, na.rm = TRUE))]
+  }
   out$contrasts_perYear <- perYear(Wl, "diff", c("contrast", "complexity"))
   Wl[, horizonBin := cut(horizon, c(0, 1, 2, 4, Inf), labels = c("1", "2", "3-4", "5+"))]
   out$contrasts_by_horizon <- byYear(Wl, "diff", c("contrast", "horizonBin"))
@@ -134,4 +142,25 @@ coefficientStability <- function(tab, response, features, yearCol = "year", year
                .(meanCoef = bw, Q = Q, pQ = stats::pchisq(Q, k - 1, lower.tail = FALSE), I2 = max(0, (Q - (k - 1)) / Q) * 100, nYears = k,
                  signFlips = sum(diff(sign(b)) != 0), shareYearsPositive = mean(b > 0)) }, by = Feature]
   out[order(-I2)][]
+}
+
+#' Compare two arms that differ only in the number of PreVal validation years (valYears 1 vs 2), on MATCHED splits: same window s..e, same
+#' forecast year T, same pool of cases and the same shared test cases (the split seed comes from the split id); only the validation size and
+#' the end of PreVal's training years differ. Per contrast: difference (arm B minus arm A) per forecast year, then the across-year test.
+#' A negative difference in "H2_PreVal_minus_Tainted" = PreVal's advantage over the status quo is larger in arm B.
+#' @param dirA,dirB analysis folders (each with pairedContrasts_perSplit.csv)
+compareValidationArms <- function(dirA, dirB, outDir = NULL, contrasts = c("H2_PreVal_minus_Tainted", "P3_PreVal_minus_Spatial", "P4_Spatial_minus_PreVal")) {
+  A <- data.table::fread(file.path(dirA, "pairedContrasts_perSplit.csv")); B <- data.table::fread(file.path(dirB, "pairedContrasts_perSplit.csv"))
+  keys <- c("splitId", "complexity", "replicate", "testYear", "horizon")
+  out <- list()
+  for (cn in intersect(contrasts, intersect(names(A), names(B)))) {
+    m <- merge(A[, c(keys, cn), with = FALSE], B[, c(keys, cn), with = FALSE], by = keys, suffixes = c("_A", "_B"))
+    m[, d := get(paste0(cn, "_B")) - get(paste0(cn, "_A"))]
+    y <- m[, .(d = mean(d), a = mean(get(paste0(cn, "_A"))), b = mean(get(paste0(cn, "_B")))), by = testYear]
+    r <- .yearTest(y$d); r[, `:=`(contrast = cn, matchedSplits = nrow(m), meanArmA = mean(y$a), meanArmB = mean(y$b))]
+    out[[cn]] <- r
+  }
+  res <- data.table::rbindlist(out)
+  if (!is.null(outDir)) { dir.create(outDir, recursive = TRUE, showWarnings = FALSE); data.table::fwrite(res, file.path(outDir, "arms_matched_comparison.csv")) }
+  res[]
 }

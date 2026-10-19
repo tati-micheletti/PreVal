@@ -49,6 +49,7 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
     groupId = planRow$groupId, splitId = planRow$splitId, typeValidation = planRow$typeValidation, modelName = modelName,
     numberOfCovariates = planRow$numberOfCovariates, replicate = planRow$replicate,
     windowStart = planRow$windowStart, historyEnd = planRow$historyEnd, testYear = planRow$testYear, horizon = planRow$horizon,
+    valYears = planRow$valYears %||% 1L, trainShare = planRow$trainShare %||% NA_real_,
     nTrain = length(trRows), nVal = length(vaRows), nTest = length(teRows), nUnitsTrain = nU(trRows), nUnitsTest = nU(teRows),
     splitSeed = planRow$splitSeed, modelSeed = planRow$modelSeed,
     trainLossBest = trLoss, valLossBest = fit$bestValLoss, bestEpoch = fit$bestEpoch, epochsRun = nrow(fit$history), epochCap = hyper$epochs %||% 100L,

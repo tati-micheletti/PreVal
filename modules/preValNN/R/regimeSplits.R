@@ -89,7 +89,7 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
     splits$Internal <- mk(draw[(nVal + 1L):length(draw)], draw[seq_len(nVal)])
   }
   list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = splits[intersect(regimes, names(splits))],
-       sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)),
+       sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)), trainShare = nEq / poolSizes[["FutureTainted"]],
        poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
        spatialValBlocks = if (!is.null(pools$FutureTaintedSpatial)) unique(spatial$key[pools$FutureTaintedSpatial$val]) else NULL)
 }

@@ -45,7 +45,7 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
     data.table::rbindlist(lapply(names(b$splits), function(rg) data.table::data.table(
       splitId = g$splitId, typeValidation = rg, windowStart = g$s, historyEnd = g$e, testYear = g$testYear, horizon = g$testYear - g$e,
       valYears = valYears, trainStartYear = g$s, trainEndYear = switch(rg, FutureUnseen = g$e - valYears, Internal = g$testYear, g$e),
-      nTrainS = b$sizes[["nTrain"]], nValS = b$sizes[["nVal"]], nTestS = b$sizes[["nTest"]], splitSeed = g$splitSeed)))
+      nTrainS = b$sizes[["nTrain"]], nValS = b$sizes[["nVal"]], nTestS = b$sizes[["nTest"]], trainShare = b$trainShare, splitSeed = g$splitSeed)))
   }))
   plan <- data.table::rbindlist(lapply(covariateLevels, function(k) data.table::rbindlist(lapply(seq_len(nReplicates), function(r) {
     x <- data.table::copy(rows); x[, `:=`(numberOfCovariates = k, replicate = r)]; x }))))
