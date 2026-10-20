@@ -24,6 +24,8 @@ defineModule(sim, list(
     defineParameter("endYear", "numeric", 2024, NA, NA, "Last year with data."),
     defineParameter("minTrainYears", "numeric", 2, 1, NA, "Minimum number of training years of PreVal in a window s..e."),
     defineParameter("valYears", "numeric", 1, 1, 5, "Number of validation years of PreVal (the last years of the window). 2 = two-year-validation variant."),
+    defineParameter("planRegimes", "character", "", NA, NA, "Comma-separated regimes that get models (default: all five). Use FutureUnseenRefit,FutureTaintedRefit for the refit arm (post-hoc); the splits are still built for all five regimes."),
+    defineParameter("baseRunTag", "character", "", NA, NA, "Refit arm: tag of the run folder that holds the base models (empty = the main run)."),
     defineParameter("runTag", "character", "", NA, NA, "Suffix of the run folder, e.g. val2 for the two-year-validation arm (the ladder file is chosen separately)."),
     defineParameter("horizons", "character", paste(1:19, collapse = ","), NA, NA, "Comma-separated forecast distances T - e (default: every distance the data allow, 1 to 19)."),
     defineParameter("complexityLevels", "character", "2,5,10,15,25,35,50,Inf", NA, NA, "Comma-separated covariate counts (Inf = all)."),
@@ -90,6 +92,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 8
         des <- generatePlan(idx, startYear = P(sim)$startYear, endYear = P(sim)$endYear, minTrainYears = P(sim)$minTrainYears, valYears = P(sim)$valYears, horizons = num(P(sim)$horizons),
                             covariateLevels = num(P(sim)$complexityLevels), nReplicates = P(sim)$nReplicates, testFraction = P(sim)$testFraction,
+                            planRegimes = if (nzchar(P(sim)$planRegimes)) trimws(strsplit(P(sim)$planRegimes, ",")[[1]]) else NULL,
                             firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
@@ -129,12 +132,13 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       message(sprintf("This process runs %d of %d models (device %s).", nrow(work), nrow(sim$experimentPlan), device))
       manifests <- new.env(); errs <- list()
       for (i in seq_len(nrow(work))) {
-        pr <- work[i]; key <- paste(pr$splitId, pr$typeValidation)
-        if (is.null(manifests[[key]])) manifests[[key]] <- readManifest(file.path(outDir, "splits"), pr$splitId, pr$typeValidation)
+        pr <- work[i]; baseRg <- sub("Refit$", "", pr$typeValidation); key <- paste(pr$splitId, baseRg)
+        if (is.null(manifests[[key]])) manifests[[key]] <- readManifest(file.path(outDir, "splits"), pr$splitId, baseRg)
         ff <- featuresForLevel(rk, pr$numberOfCovariates)
         message(sprintf("[%d/%d] %s", i, nrow(work), pr$modelName))
         res <- tryCatch(runModel(store, manifests[[key]], pr, ff, adapter, hyper, modelDir, reRun = P(sim)$reRunModels, device = device,
-                                 zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience), error = function(e) e)
+                                 zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience,
+                                 mainModelDir = file.path(root, paste0("run", if (nzchar(P(sim)$baseRunTag)) paste0("_", P(sim)$baseRunTag) else ""), "testedModels")), error = function(e) e)
         if (inherits(res, "error")) {
           writeLines(c(pr$modelName, conditionMessage(res)), file.path(modelDir, "errors", paste0(pr$modelName, ".txt")))
           errs[[length(errs) + 1L]] <- data.table::data.table(modelName = pr$modelName, error = conditionMessage(res))

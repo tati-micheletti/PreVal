@@ -10,7 +10,11 @@
 #' @param adapter getAdapter(...)
 #' @param hyper list(hidden, embDim, dropout, lr, batchSize, epochs, weightDecay), fixed per species
 runModel <- function(store, manifest, planRow, features, adapter, hyper, outputDir, reRun = FALSE, device = "cpu", zClip = 10,
-                     earlyStopPatience = 15L, verbose = FALSE) {
+                     earlyStopPatience = 15L, verbose = FALSE, mainModelDir = NULL) {
+  if (grepl("Refit$", planRow$typeValidation)) {      # refit regimes: see runRefit.R
+    if (is.null(mainModelDir)) stop("refit regimes need mainModelDir (the folder with the base models)")
+    return(runModelRefit(store, manifest, planRow, features, adapter, hyper, outputDir, mainModelDir, reRun = reRun, device = device, zClip = zClip))
+  }
   modelName <- planRow$modelName
   finalPath <- file.path(outputDir, paste0(modelName, "_finalDT.csv"))
   if (!reRun && file.exists(finalPath)) { message(modelName, ": results exist and reRun = FALSE; loading."); return(data.table::fread(finalPath)) }

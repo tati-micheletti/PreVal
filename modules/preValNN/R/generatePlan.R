@@ -9,13 +9,15 @@
 #' @param valYears number of validation years of PreVal (default 1; 2 = the two-year-validation variant)
 #' @param horizons forecast distances T - e to build (e.g. 1:3)
 #' @param covariateLevels complexity ladder (Inf = all)
+#' @param planRegimes regimes that get models in the plan (default: all built ones). Names ending in "Refit" use the base regime's split and need all
+#'   base regimes to be BUILT (equal training size depends on all of them), so `regimes` stays the full set
 #' @param nReplicates independent network initialisations per cell (same splits)
 #' @param firstForecastYear no split forecasts an earlier year (the years before it form the pre-test history used by the network pilot)
 #' @param blockKm,bufferKm,nFolds spatial blocks for the spatial regime (blockKm usually from blockSizeFromAutocorrelation())
 #' @param regimes which regimes to build
 #' @return list(plan, splitSummary, checks, skipped, bundles, spatial)
 generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
-                         nReplicates = 1L, firstForecastYear = -Inf, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
+                         nReplicates = 1L, firstForecastYear = -Inf, planRegimes = NULL, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL) {
   spatialSeed <- stringSeed("spatialBlocks")
   spatial <- assignBlocks(idx, blockKm = blockKm, bufferKm = bufferKm, nFolds = nFolds, seed = spatialSeed)
@@ -43,9 +45,11 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
   if (length(skipped)) message(sprintf("Dropped %d splits:\n%s", length(skipped), paste(utils::capture.output(print(data.table::rbindlist(skipped))), collapse = "\n")))
   rows <- data.table::rbindlist(lapply(seq_len(nrow(keep)), function(i) {
     g <- keep[i]; b <- bundles[[g$splitId]]
-    data.table::rbindlist(lapply(names(b$splits), function(rg) data.table::data.table(
+    planRg <- if (is.null(planRegimes)) names(b$splits) else planRegimes
+    planRg <- planRg[sub("Refit$", "", planRg) %in% names(b$splits)]
+    data.table::rbindlist(lapply(planRg, function(rg) data.table::data.table(
       splitId = g$splitId, typeValidation = rg, windowStart = g$s, historyEnd = g$e, testYear = g$testYear, horizon = g$testYear - g$e,
-      valYears = valYears, trainStartYear = g$s, trainEndYear = switch(rg, FutureUnseen = g$e - valYears, Internal = g$testYear, g$e),
+      valYears = valYears, trainStartYear = g$s, trainEndYear = switch(sub("Refit$", "", rg), FutureUnseen = g$e - valYears, Internal = g$testYear, g$e),
       nTrainS = b$sizes[["nTrain"]], nValS = b$sizes[["nVal"]], nTestS = b$sizes[["nTest"]], trainShare = b$trainShare, splitSeed = g$splitSeed)))
   }))
   plan <- data.table::rbindlist(lapply(covariateLevels, function(k) data.table::rbindlist(lapply(seq_len(nReplicates), function(r) {
@@ -83,7 +87,8 @@ readManifest <- function(manifestDir, splitId, regime) {
 auditManifests <- function(idx, plan, manifestDir, spatial) {
   out <- list()
   for (sid in unique(plan$splitId)) {
-    p <- plan[splitId == sid][1]; rgs <- unique(plan[splitId == sid]$typeValidation)
+    p <- plan[splitId == sid][1]
+    rgs <- sub(paste0("^", sid, "__(.*)[.]rds$"), "\\1", list.files(manifestDir, pattern = paste0("^", sid, "__.*[.]rds$")))   # every regime stored for this split
     splits <- stats::setNames(lapply(rgs, function(rg) readManifest(manifestDir, sid, rg)[, .(row, set)]), rgs)
     sv <- if ("FutureTaintedSpatial" %in% rgs) unique(spatial$key[splits$FutureTaintedSpatial[set == "val"]$row]) else NULL
     v <- if (!is.null(p$valYears) && !is.na(p$valYears)) p$valYears else 1L

@@ -59,6 +59,7 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
   contrast("P4_Spatial_minus_PreVal", "FutureTaintedSpatial", "FutureUnseen")
   cn <- grep("^(H1|H2|P3|P4)_", names(W), value = TRUE)
   data.table::fwrite(W, file.path(outDir, "pairedContrasts_perSplit.csv"))
+  if (!length(cn)) { message("analyzeRegimes: none of the standard regime contrasts is available in this run; writing the model table only."); return(invisible(out)) }
   Wl <- data.table::melt(W, id.vars = id, measure.vars = cn, variable.name = "contrast", value.name = "diff")
   out$contrasts_pooled <- byYear(Wl, "diff", "contrast")
   out$contrasts_by_complexity <- byYear(Wl, "diff", c("contrast", "complexity"))
@@ -177,4 +178,26 @@ compareValidationArms <- function(dirA, dirB, outDir = NULL, contrasts = c("H2_P
   res <- data.table::rbindlist(out)
   if (!is.null(outDir)) { dir.create(outDir, recursive = TRUE, showWarnings = FALSE); data.table::fwrite(res, file.path(outDir, "arms_matched_comparison.csv")) }
   res[]
+}
+
+#' Refit arm versus the main run (post-hoc arm). Reads the allModels.csv of both analysis folders and compares, per forecast year (the unit),
+#' the realized loss of: refit PreVal vs refit status quo; refit PreVal vs plain status quo; and what refitting itself changes in each regime.
+#' @param mainDir,refitDir analysis folders of the main run and of the refit arm
+compareRefit <- function(mainDir, refitDir, outDir = NULL) {
+  A <- data.table::fread(file.path(mainDir, "allModels.csv")); B <- data.table::fread(file.path(refitDir, "allModels.csv"))
+  key <- c("splitId", "complexity", "replicate", "testYear", "horizon")
+  w <- merge(data.table::dcast(A, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = "testLossMean"),
+             data.table::dcast(B, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = "testLossMean"), by = key)
+  prs <- list(c("FutureUnseenRefit", "FutureTaintedRefit", "PreVal-refit minus status-quo-refit"), c("FutureUnseenRefit", "FutureTainted", "PreVal-refit minus status quo (plain)"),
+              c("FutureUnseenRefit", "FutureUnseen", "effect of refitting PreVal"), c("FutureTaintedRefit", "FutureTainted", "effect of refitting the status quo"))
+  w[, bin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]
+  res <- list()
+  for (p in prs) if (all(p[1:2] %in% names(w))) {
+    w[, d := get(p[1]) - get(p[2])]
+    y <- w[, .(v = mean(d)), by = testYear]; res[[length(res) + 1L]] <- cbind(contrast = p[3], horizon = "all", .yearTest(y$v))
+    for (b in levels(w$bin)) { y <- w[bin == b, .(v = mean(d)), by = testYear]; if (nrow(y) >= 3) res[[length(res) + 1L]] <- cbind(contrast = p[3], horizon = b, .yearTest(y$v)) }
+  }
+  out <- data.table::rbindlist(res)
+  if (!is.null(outDir)) { dir.create(outDir, recursive = TRUE, showWarnings = FALSE); data.table::fwrite(out, file.path(outDir, "refit_vs_main.csv")) }
+  out[]
 }
