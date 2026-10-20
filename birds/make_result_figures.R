@@ -42,25 +42,6 @@ p2 <- ggplot() + geom_hline(yintercept = 0, colour = "grey30") + geom_point(data
        subtitle = "Grey dots = single forecast years; black = mean and 95% interval across years") + th
 sv(p2, "fig2_difference_to_status_quo_by_horizon.png", h = 6)
 
-# ---- Fig 3: covariate ladder (penalty relative to 2 covariates) --------------------------------------------------------------
-L <- M[, .(loss = mean(realized)), by = .(testYear, complexity, regime)]
-L[, pen := loss - loss[complexity == min(complexity)], by = .(testYear, regime)]
-LS <- L[, { r <- ci(pen); .(m = r$m, lo = r$lo, hi = r$hi) }, by = .(complexity, regime)]
-p3 <- ggplot(LS, aes(factor(complexity), m, colour = regime, group = regime, fill = regime)) + geom_hline(yintercept = 0, colour = "grey60") +
-  geom_ribbon(aes(ymin = lo, ymax = hi), alpha = .1, colour = NA) + geom_line(linewidth = .9) + geom_point(size = 1.8) +
-  scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
-  labs(x = "Number of covariates (ranked by importance)", y = "Loss relative to the 2-covariate model (below 0 = better)",
-       title = paste0(label, ": does adding covariates hurt, and does it depend on the validation scheme?"),
-       subtitle = "Mean over forecast years (ribbon = 95% interval across years)") + th
-sv(p3, "fig3_covariate_ladder.png")
-L2 <- L[regime %in% c("PreVal", "Status quo (random split)")]
-p3b <- ggplot(L2, aes(factor(complexity), pen, colour = regime)) + geom_hline(yintercept = 0, colour = "grey60") +
-  geom_line(aes(group = interaction(testYear, regime)), alpha = .25) + stat_summary(aes(group = regime), fun = mean, geom = "line", linewidth = 1.2) +
-  scale_colour_manual(values = cols) + facet_wrap(~regime, ncol = 2) +
-  labs(x = "Number of covariates", y = "Loss relative to the 2-covariate model", title = paste0(label, ": every forecast year (thin) and the mean (thick)"),
-       subtitle = "Both validation schemes show the same U shape: best at about 5 to 15 covariates, worse with all 95") + th + theme(legend.position = "none")
-sv(p3b, "fig3b_covariate_ladder_per_year.png", h = 4.8)
-
 # ---- Fig 4: H1 per forecast year -----------------------------------------------------------------------------------------------
 H <- dcast(M[, .(loss = mean(realized)), by = .(testYear, regime)], testYear ~ regime, value.var = "loss")
 H[, d := `Status quo (random split)` - `Random CV reference (leaky)`]

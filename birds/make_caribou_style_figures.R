@@ -53,17 +53,6 @@ p2 <- ggplot(Y2, aes(d, testYear)) + geom_vline(xintercept = 0, linetype = 2) + 
        subtitle = "Blue diamond and bar: mean and t interval across forecast years (paired on identical test cases)") + th
 sv(p2, "fig2_H2_forest.png", w = 14, h = 7)
 
-# ---- Fig 3: does adding covariates hurt out of sample? (relative to the smallest model, as in the caribou figure) -----------------------
-L <- M[, .(loss = mean(realized)), by = .(testYear, complexity, regime)]
-L[, pen := loss - loss[complexity == min(complexity)], by = .(testYear, regime)]
-LM <- L[, .(pen = mean(pen)), by = .(complexity, regime)]
-p3 <- ggplot(L, aes(factor(complexity), pen)) + geom_hline(yintercept = 0, linetype = 2) + geom_line(aes(group = testYear), colour = "grey70", linewidth = .3) +
-  geom_line(data = LM, aes(group = regime, colour = regime), linewidth = 1.3) + geom_point(data = LM, aes(colour = regime), size = 2.3) +
-  scale_colour_manual(values = cols) + facet_wrap(~regime, nrow = 1) +
-  labs(x = "Number of covariates", y = "Realized loss minus the 2-covariate model's (per forecast year)", title = paste0(label, ": does adding covariates hurt out-of-sample?"),
-       subtitle = "Grey: one line per forecast year. Colour: mean. Above 0 = worse than the 2-covariate model") + th + theme(legend.position = "none")
-sv(p3, "fig3_complexity_by_year.png", w = 15, h = 5.5)
-
 # ---- Fig 3b: absolute loss by number of covariates (median and middle 50% of splits), no reference level ----------------------------------------
 A <- M[, .(med = median(realized), q1 = quantile(realized, .25), q3 = quantile(realized, .75)), by = .(complexity, regime)]
 p3b <- ggplot(A, aes(factor(complexity), med, colour = regime, fill = regime, group = regime)) + geom_ribbon(aes(ymin = q1, ymax = q3), alpha = .12, colour = NA) +
@@ -90,16 +79,17 @@ p6 <- ggplot(E, aes(regime, share, fill = end)) + geom_col(width = .8) + scale_f
   labs(x = NULL, y = "Share of models", fill = NULL, title = paste0(label, ": how did training end?"), subtitle = "Dark: training hit the epoch cap while validation loss was still improving") + th
 sv(p6, "fig6_how_training_ended.png", w = 9, h = 5)
 
-# ---- Fig 9: paired penalty by forecast distance (median and middle 50% of splits) -----------------------------------------------------------------
+# ---- Fig 9: validation protocols compared with the status quo, by number of covariates and forecast distance --------------------------------------
 M[, hb := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("Horizon 1", "Horizon 2", "Horizon 3-4", "Horizon 5-9", "Horizon 10+"))]
-M[, pen := realized - realized[complexity == min(complexity)], by = .(splitId, typeValidation)]
-G <- rbind(M[, .(hb = factor("All horizons", levels = c("All horizons", levels(M$hb))), complexity, regime, pen)], M[, .(hb, complexity, regime, pen)])
-GS <- G[, .(med = median(pen), q1 = quantile(pen, .25), q3 = quantile(pen, .75)), by = .(hb, complexity, regime)]
-p9 <- ggplot(GS, aes(factor(complexity), med, colour = regime, fill = regime, group = regime)) + geom_hline(yintercept = 0, linetype = 2) +
+D9 <- dcast(M, splitId + complexity + hb ~ typeValidation, value.var = "realized")
+D9 <- rbind(D9[, .(hb = factor("All horizons", levels = c("All horizons", levels(M$hb))), complexity, what = "PreVal", d = FutureUnseen - FutureTainted)],
+            D9[, .(hb = factor("All horizons", levels = c("All horizons", levels(M$hb))), complexity, what = "Spatial-block CV", d = FutureTaintedSpatial - FutureTainted)],
+            D9[, .(hb, complexity, what = "PreVal", d = FutureUnseen - FutureTainted)], D9[, .(hb, complexity, what = "Spatial-block CV", d = FutureTaintedSpatial - FutureTainted)])
+GS <- D9[, .(med = median(d), q1 = quantile(d, .25), q3 = quantile(d, .75)), by = .(hb, complexity, what)]
+p9 <- ggplot(GS, aes(factor(complexity), med, colour = what, fill = what, group = what)) + geom_hline(yintercept = 0, linetype = 2) +
   geom_ribbon(aes(ymin = q1, ymax = q3), alpha = .1, colour = NA) + geom_line(linewidth = 1) + geom_point(size = 1.6) + facet_wrap(~hb, nrow = 1) +
-  scale_colour_manual(values = cols) + scale_fill_manual(values = cols) +
-  labs(x = "Number of covariates", y = "Loss minus the same split's loss with the fewest covariates", colour = NULL, fill = NULL,
-       title = paste0(label, ": does adding covariates hurt? Paired within each split"),
-       subtitle = "Line: median across splits. Band: middle 50% of splits. Above 0 = worse than the simplest model") + th
-sv(p9, "fig9_paired_penalty.png", w = 18, h = 5.5)
+  scale_colour_manual(values = c("PreVal" = "#2171B5", "Spatial-block CV" = "#2E8B57")) + scale_fill_manual(values = c("PreVal" = "#2171B5", "Spatial-block CV" = "#2E8B57")) +
+  labs(x = "Number of covariates", y = "Loss minus the status quo's loss on the same split (below 0 = better than the status quo)", colour = NULL, fill = NULL,
+       title = paste0(label, ": validation protocols compared with the status quo"), subtitle = "Line: median across splits. Band: middle 50% of splits. Same split, same covariates, same test cases") + th
+sv(p9, "fig9_protocols_vs_status_quo.png", w = 18, h = 5.5)
 cat("figures written to", outDir, "\n")
