@@ -117,6 +117,19 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
       if (length(rows)) out$P5_mixed_interactions <- data.table::rbindlist(rows)
     }
   }
+  # ---- EXPLORATORY (not in the pre-specified plan; added after the first look at the greenfinch results) ----------------------
+  # Decision relevance: each regime picks, per split, the number of covariates with its own lowest REPORTED (validation) loss; we then look at the
+  # REALIZED loss at that choice. The pre-specified analysis above compares regimes at the SAME fixed number of covariates.
+  sel <- M[, { k <- which.min(reported); .(chosen = complexity[k], realizedChosen = realized[k], oracle = min(realized), testYear = testYear[1]) },
+           by = .(splitId, replicate, typeValidation)]
+  sel[, regret := realizedChosen - oracle]
+  out$EXPLORATORY_selection_by_regime <- sel[, .(medianChosen = stats::median(chosen), meanRegret = mean(regret), splits = .N), by = typeValidation]
+  sw <- data.table::dcast(sel, splitId + replicate + testYear ~ typeValidation, value.var = "realizedChosen")
+  sd <- list()
+  for (cmp in intersect(c("FutureUnseen", "FutureTaintedSpatial", "FutureTaintedGrouped"), names(sw))) if ("FutureTainted" %in% names(sw)) {
+    sw[, d := get(cmp) - FutureTainted]; sd[[cmp]] <- byYear(sw, "d", character(0))[, contrast := paste(cmp, "minus FutureTainted (realized loss at each regime's own choice)")]
+  }
+  if (length(sd)) out$EXPLORATORY_selection_contrasts <- data.table::rbindlist(sd)
   out$training_behaviour <- M[, .(share_stopped_at_cap = mean(capBound), median_best_epoch = stats::median(bestEpoch), median_epochs_run = stats::median(epochsRun), models = .N), by = typeValidation]
   for (nm in names(out)) data.table::fwrite(out[[nm]], file.path(outDir, paste0(nm, ".csv")))
   invisible(out)

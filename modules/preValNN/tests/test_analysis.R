@@ -50,4 +50,5 @@ cmp <- compareValidationArms(file.path(tempdir(), "ana"), file.path(tempdir(), "
 h2 <- cmp[contrast == "H2_PreVal_minus_Tainted"]
 check(abs(h2$estimate + 0.03) < 0.005 && h2$pSignFlip < 0.01 && h2$nYears == length(tests), sprintf("arm comparison recovers the extra PreVal advantage (%.3f, truth -0.030, %d years)", h2$estimate, h2$nYears))
 check(!is.null(oB$trainShare_summary) && oB$trainShare_summary$share80 == 1 && !is.null(oB$contrasts_pooled_share80), "share-restricted sensitivity and the training-share summary are written")
+check(!is.null(o$EXPLORATORY_selection_by_regime) && !is.null(o$EXPLORATORY_selection_contrasts), "exploratory covariate-selection tables are written and labelled EXPLORATORY")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)
