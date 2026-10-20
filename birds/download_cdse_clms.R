@@ -40,7 +40,7 @@ if (listOnly) quit(save = "no")
 
 user <- Sys.getenv("CDSE_USER"); pass <- Sys.getenv("CDSE_PASS")
 credFile <- file.path("data_birds", "cdse_login.txt")          # alternative to the environment variables: line 1 = e-mail, line 2 = password (git-ignored; delete it afterwards)
-if ((!nzchar(user) || !nzchar(pass)) && file.exists(credFile)) {
+if (file.exists(credFile)) {          # the file wins over any (possibly stale) environment variable
   ln <- sub("^﻿", "", trimws(readLines(credFile, warn = FALSE, encoding = "UTF-8")))
   ln <- ln[nzchar(ln)]
   if (length(ln) >= 2) { user <- ln[1]; pass <- ln[2]; cat("Using the login in", credFile, "
