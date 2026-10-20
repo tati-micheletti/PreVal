@@ -43,7 +43,9 @@ if (!nzchar(user) || !nzchar(pass)) stop("Set CDSE_USER and CDSE_PASS in your ow
 tok <- NULL; tokTime <- 0
 getToken <- function(force = FALSE) {
   if (!force && !is.null(tok) && as.numeric(Sys.time()) - tokTime < 420) return(tok)       # tokens last about 10 minutes
-  h <- new_handle(); handle_setform(h, client_id = "cdse-public", grant_type = "password", username = user, password = pass)
+  # the token endpoint wants an urlencoded body (a multipart form is refused with "invalid client"); values are escaped, so special characters are safe
+  body <- paste0("client_id=cdse-public&grant_type=password&username=", curl_escape(enc2utf8(user)), "&password=", curl_escape(enc2utf8(pass)))
+  h <- new_handle(); handle_setopt(h, postfields = body); handle_setheaders(h, "Content-Type" = "application/x-www-form-urlencoded")
   r <- curl_fetch_memory("https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token", handle = h)
   if (r$status_code != 200) {
     why <- tryCatch(fromJSON(rawToChar(r$content))$error_description, error = function(e) "(no reason given)")
