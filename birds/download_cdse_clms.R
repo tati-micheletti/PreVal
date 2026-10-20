@@ -45,7 +45,14 @@ getToken <- function(force = FALSE) {
   if (!force && !is.null(tok) && as.numeric(Sys.time()) - tokTime < 420) return(tok)       # tokens last about 10 minutes
   h <- new_handle(); handle_setform(h, client_id = "cdse-public", grant_type = "password", username = user, password = pass)
   r <- curl_fetch_memory("https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token", handle = h)
-  if (r$status_code != 200) stop("Login failed (", r$status_code, "). Check the CDSE e-mail and password (the same account as the Copernicus Browser).")
+  if (r$status_code != 200) {
+    why <- tryCatch(fromJSON(rawToChar(r$content))$error_description, error = function(e) "(no reason given)")
+    stop("Login failed (", r$status_code, "): ", why, "
+User used: ", user, " | password length: ", nchar(pass),
+         "
+Check: (1) the same e-mail and password work at https://identity.dataspace.copernicus.eu ; (2) the account has no two-factor code ",
+         "(a password-only login is needed for this script); (3) you do not log in through Google or another provider (then there is no password yet).")
+  }
   tok <<- fromJSON(rawToChar(r$content))$access_token; tokTime <<- as.numeric(Sys.time()); tok
 }
 failed <- character(); done <- 0L
