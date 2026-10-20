@@ -5,7 +5,7 @@
   est <- mean(x); se <- if (n > 1) stats::sd(x) / sqrt(n) else NA_real_
   tc <- if (n > 1) stats::qt(0.975, n - 1) else NA_real_
   p <- NA_real_
-  if (n >= 2 && n <= 16) { sg <- as.matrix(expand.grid(rep(list(c(-1, 1)), n))); p <- mean(abs(sg %*% x / n) >= abs(est) - 1e-12) }
+  if (n >= 2 && n <= 18) { sg <- as.matrix(expand.grid(rep(list(c(-1, 1)), n))); p <- mean(abs(sg %*% x / n) >= abs(est) - 1e-12) }   # exact up to 18 forecast years
   eq <- NA
   if (!is.null(equivMargin) && n > 1) { t90 <- stats::qt(0.95, n - 1); eq <- (est - t90 * se > -equivMargin) && (est + t90 * se < equivMargin) }
   data.table::data.table(estimate = est, lo = est - tc * se, hi = est + tc * se, pSignFlip = p, nYears = n, nPositive = sum(x > 0), equivalent = eq)
@@ -19,7 +19,7 @@
 #'   realized = loss on the shared test set (the forecast year)
 #'   optimism = realized - reported
 #' Inference: the independent unit is the FORECAST YEAR (splits sharing a forecast year share their test cases). Every estimate is first
-#' averaged within forecast year; across years we report the mean, a t interval and an EXACT sign-flip p-value (no bootstrap over ~15 clusters).
+#' averaged within forecast year; across years we report the mean, a t interval and an EXACT sign-flip p-value (no bootstrap over ~15 clusters; exact up to 18 forecast years).
 #' Contrasts (all paired on identical test cases; negative = the first regime forecasts better):
 #'   H1   FutureTainted - Internal                 (>0: the status quo forecasts worse than the leaky reference says)
 #'   H2   FutureUnseen (PreVal) - FutureTainted    (<0)
