@@ -80,11 +80,11 @@ p5 <- ggplot(RS, aes(regime, m, fill = what)) + geom_col(position = position_dod
        subtitle = "A gap between the two bars = the scheme's validation was too optimistic (or, for spatial and route-grouped schemes, too pessimistic)") + th
 sv(p5, "fig5_reported_vs_realized.png", w = 10)
 
-# ---- Fig 6 (EXPLORATORY): how many covariates would each scheme pick? -----------------------------------------------------------
+# ---- Fig 6 : how many covariates would each scheme pick? -----------------------------------------------------------
 sel <- M[, { k <- which.min(reported); .(chosen = complexity[k], realizedChosen = realized[k]) }, by = .(splitId, regime)]
 SC <- sel[, .N, by = .(regime, chosen)][, share := N / sum(N), by = regime]
 p6 <- ggplot(SC, aes(factor(chosen), share, fill = regime)) + geom_col(position = position_dodge(.8), width = .75) + scale_fill_manual(values = cols) + scale_y_continuous(labels = scales::percent) +
-  labs(x = "Number of covariates picked by the scheme's own lowest validation loss", y = "Share of splits", title = paste0(label, ": which model size would each scheme choose? (exploratory)"),
-       subtitle = "Not part of the pre-specified analysis") + th
-sv(p6, "fig6_exploratory_covariate_choice.png", w = 10)
+  labs(x = "Number of covariates picked by the scheme's own lowest validation loss", y = "Share of splits", title = paste0(label, ": which model size would each scheme choose? "),
+       subtitle = "Chosen per split by each scheme's own lowest validation loss") + th
+sv(p6, "fig6_covariate_choice.png", w = 10)
 cat("figures written to", outDir, "\n")
