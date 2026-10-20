@@ -10,6 +10,7 @@ dir.create(outDir, recursive = TRUE, showWarnings = FALSE)
 M <- fread(file.path(anaDir, "allModels.csv")); M[, `:=`(realized = testLossMean, reported = valLossBest)]
 reg <- c(FutureUnseen = "PreVal", FutureTainted = "Status quo (random split)", FutureTaintedGrouped = "Route-grouped CV", FutureTaintedSpatial = "Spatial-block CV", Internal = "Random CV reference (leaky)")
 cols <- c("PreVal" = "#0072B2", "Status quo (random split)" = "#D55E00", "Route-grouped CV" = "#CC79A7", "Spatial-block CV" = "#009E73", "Random CV reference (leaky)" = "grey45")
+M <- M[typeValidation != "FutureTaintedGrouped"]      # route-grouped CV is no longer shown (decision of 2026-10-21)
 M[, regime := factor(reg[typeValidation], levels = reg)]
 th <- theme_minimal(base_size = 12) + theme(legend.position = "bottom", legend.title = element_blank(), panel.grid.minor = element_blank())
 ci <- function(x) { x <- x[is.finite(x)]; n <- length(x); m <- mean(x); s <- if (n > 1) sd(x) / sqrt(n) * qt(.975, n - 1) else NA_real_; list(m = m, lo = m - s, hi = m + s, n = n) }
@@ -30,9 +31,8 @@ sv(p1, "fig1_loss_by_horizon.png")
 Wd <- dcast(Y, testYear + horizon ~ regime, value.var = "loss")
 setnames(Wd, names(reg), names(reg), skip_absent = TRUE)
 dd <- rbindlist(list(Wd[, .(testYear, horizon, d = `PreVal` - `Status quo (random split)`, what = "PreVal minus status quo")],
-                     Wd[, .(testYear, horizon, d = `Spatial-block CV` - `Status quo (random split)`, what = "Spatial-block minus status quo")],
-                     Wd[, .(testYear, horizon, d = `Route-grouped CV` - `Status quo (random split)`, what = "Route-grouped minus status quo")]))
-dd[, what := factor(what, c("PreVal minus status quo", "Spatial-block minus status quo", "Route-grouped minus status quo"))]
+                     Wd[, .(testYear, horizon, d = `Spatial-block CV` - `Status quo (random split)`, what = "Spatial-block minus status quo")]))
+dd[, what := factor(what, c("PreVal minus status quo", "Spatial-block minus status quo"))]
 D <- dd[, { r <- ci(d); .(m = r$m, lo = r$lo, hi = r$hi, n = r$n) }, by = .(horizon, what)][n >= 4]
 p2 <- ggplot() + geom_hline(yintercept = 0, colour = "grey30") + geom_point(data = dd[horizon <= 12], aes(horizon, d), colour = "grey70", size = .9, alpha = .7) +
   geom_errorbar(data = D, aes(horizon, ymin = lo, ymax = hi), width = .25, colour = "#222222") + geom_point(data = D, aes(horizon, m), size = 2.2, colour = "#222222") +
@@ -40,7 +40,7 @@ p2 <- ggplot() + geom_hline(yintercept = 0, colour = "grey30") + geom_point(data
   labs(x = "Forecast distance (years)", y = "Loss difference (below 0 = better than the status quo)",
        title = paste0(label, ": difference to the status quo, forecast distance by forecast distance"),
        subtitle = "Grey dots = single forecast years; black = mean and 95% interval across years") + th
-sv(p2, "fig2_difference_to_status_quo_by_horizon.png", h = 8)
+sv(p2, "fig2_difference_to_status_quo_by_horizon.png", h = 6)
 
 # ---- Fig 3: covariate ladder (penalty relative to 2 covariates) --------------------------------------------------------------
 L <- M[, .(loss = mean(realized)), by = .(testYear, complexity, regime)]

@@ -43,7 +43,7 @@ defineModule(sim, list(
     defineParameter("epoch", "numeric", 100, 1, 1000, "Maximum epochs per model (best validation epoch is kept)."),
     defineParameter("earlyStopPatience", "numeric", 15, 1, Inf, "Stop after this many epochs without a new best validation loss."),
     defineParameter("zClip", "numeric", 10, 1, Inf, "Standardised covariates are clipped to +/- zClip."),
-    defineParameter("regimes", "character", "FutureUnseen,FutureTainted,FutureTaintedGrouped,FutureTaintedSpatial,Internal", NA, NA, "Regimes to build."),
+    defineParameter("regimes", "character", "FutureUnseen,FutureTainted,FutureTaintedSpatial,Internal", NA, NA, "Regimes to build (route-grouped CV was dropped on 2026-10-21; the main greenfinch and woodpecker runs still contain it)."),
     defineParameter("runSlice", "numeric", NA_real_, NA, NA, "c(taskId, nTasks) to run a share of the models in this process (SLURM array). NA runs everything."),
     defineParameter("torchThreads", "numeric", 1, 1, NA, "Threads per process for torch."),
     defineParameter("stopOnError", "logical", TRUE, NA, NA, "Raise an error after the run if any model failed."),

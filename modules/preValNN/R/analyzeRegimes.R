@@ -29,11 +29,12 @@
 #'   P5   covariate ladder: penalty vs the simplest level, END and PEAK per regime and the regime differences
 #' PreVal is NEVER compared with Internal (Internal is leaky by construction and enters only H1).
 #' @param nCovariatesAll how many covariates `Inf` stands for (for the x axis and the log2 slope)
-analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005) {
+analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, excludeRegimes = "FutureTaintedGrouped") {
   dir.create(outDir, recursive = TRUE, showWarnings = FALSE)
   files <- list.files(modelDir, pattern = "_finalDT\\.csv$", full.names = TRUE)
   if (!length(files)) stop("No result files in ", modelDir)
   M <- data.table::rbindlist(lapply(files, data.table::fread), fill = TRUE)
+  M <- M[!typeValidation %in% excludeRegimes]      # route-grouped CV is no longer analysed (decision of 2026-10-21); its models stay on disk
   M[, `:=`(reported = valLossBest, realized = testLossMean)]
   M[, `:=`(optimism = realized - reported, trainTestGap = realized - trainLossBest,
            complexity = ifelse(is.infinite(numberOfCovariates), nCovariatesAll, numberOfCovariates),

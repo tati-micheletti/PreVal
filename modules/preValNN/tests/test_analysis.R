@@ -21,7 +21,7 @@ for (T in tests) { sid <- sprintf("s2005_e%d_T%d", T - 1, T); ye <- rnorm(1, 0, 
       bestEpoch = 10L, epochsRun = 25L, epochCap = 100L, testLossMean = rep) } }
 d <- file.path(tempdir(), "res"); dir.create(d, showWarnings = FALSE)
 for (r in rows) fwrite(r, file.path(d, paste0(r$modelName, "_finalDT.csv")))
-o <- analyzeRegimes(d, file.path(tempdir(), "ana"), nCovariatesAll = 50)
+o <- analyzeRegimes(d, file.path(tempdir(), "ana"), nCovariatesAll = 50, excludeRegimes = character(0))
 cp <- o$contrasts_pooled
 g <- function(n) cp[contrast == n]
 check(abs(g("H1_Tainted_minus_Internal")$estimate - 0.20) < 0.03 && g("H1_Tainted_minus_Internal")$pSignFlip < 0.01, sprintf("H1 contrast recovered (%.3f, truth about 0.20)", g("H1_Tainted_minus_Internal")$estimate))
@@ -45,10 +45,12 @@ check(cs[Feature == "flip"]$signFlips >= 8 && cs[Feature == "stable"]$signFlips 
 dB <- file.path(tempdir(), "resB"); dir.create(dB, showWarnings = FALSE)
 for (r in rows) { r2 <- data.table::copy(r); if (r2$typeValidation == "FutureUnseen") { r2[, testLossMean := testLossMean - 0.03] }; r2[, trainShare := 0.9]
   data.table::fwrite(r2, file.path(dB, paste0(r2$modelName, "_finalDT.csv"))) }
-oB <- analyzeRegimes(dB, file.path(tempdir(), "anaB"), nCovariatesAll = 50)
+oB <- analyzeRegimes(dB, file.path(tempdir(), "anaB"), nCovariatesAll = 50, excludeRegimes = character(0))
 cmp <- compareValidationArms(file.path(tempdir(), "ana"), file.path(tempdir(), "anaB"))
 h2 <- cmp[contrast == "H2_PreVal_minus_Tainted"]
 check(abs(h2$estimate + 0.03) < 0.005 && h2$pSignFlip < 0.01 && h2$nYears == length(tests), sprintf("arm comparison recovers the extra PreVal advantage (%.3f, truth -0.030, %d years)", h2$estimate, h2$nYears))
 check(!is.null(oB$trainShare_summary) && oB$trainShare_summary$share80 == 1 && !is.null(oB$contrasts_pooled_share80), "share-restricted sensitivity and the training-share summary are written")
 check(!is.null(o$selection_by_regime) && !is.null(o$selection_contrasts), "exploratory covariate-selection tables are written and written")
+oD <- analyzeRegimes(d, file.path(tempdir(), "anaD"), nCovariatesAll = 50)
+check(!any(grepl("Grouped", oD$contrasts_pooled$contrast)) && !"FutureTaintedGrouped" %in% oD$table1_design$typeValidation, "by default route-grouped CV is left out of the analysis")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)
