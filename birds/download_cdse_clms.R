@@ -11,7 +11,7 @@
 .libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
 suppressMessages({library(curl); library(jsonlite)})
 args <- commandArgs(trailingOnly = TRUE)
-listOnly <- "--list" %in% args
+listOnly <- "--list" %in% args; checkOnly <- "--check" %in% args
 years <- 2018:2024
 # product codes in the catalogue: TCD = tree cover density, BCD = broadleaved cover density, CCD = coniferous cover density (all 100 m, yearly)
 products <- c(TCD = "hrl_tcd", BCD = "hrl_bcd", CCD = "hrl_ccd")
@@ -30,7 +30,7 @@ listProducts <- function(code, yr) {
                                                                            md5 = tolower(Filter(function(z) z$Algorithm == "MD5", p$Checksum)[[1]]$Value), stringsAsFactors = FALSE)))
   if (length(v)) rbindlist0(v) else NULL
 }
-man <- do.call(rbind, lapply(names(products), function(code) do.call(rbind, lapply(years, function(y) listProducts(code, y)))))
+man <- if (checkOnly) data.frame() else do.call(rbind, lapply(names(products), function(code) do.call(rbind, lapply(years, function(y) listProducts(code, y)))))
 man$folder <- products[man$code]; man$file <- file.path(root, man$folder, paste0(man$name, ".tif"))
 dir.create(root, recursive = TRUE, showWarnings = FALSE)
 write.csv(man, file.path(root, "clms_manifest.csv"), row.names = FALSE)
@@ -39,7 +39,14 @@ print(table(man$code, man$year))
 if (listOnly) quit(save = "no")
 
 user <- Sys.getenv("CDSE_USER"); pass <- Sys.getenv("CDSE_PASS")
-if (!nzchar(user) || !nzchar(pass)) stop("Set CDSE_USER and CDSE_PASS in your own terminal first (see the top of this file).")
+credFile <- file.path("data_birds", "cdse_login.txt")          # alternative to the environment variables: line 1 = e-mail, line 2 = password (git-ignored; delete it afterwards)
+if ((!nzchar(user) || !nzchar(pass)) && file.exists(credFile)) {
+  ln <- sub("^﻿", "", trimws(readLines(credFile, warn = FALSE, encoding = "UTF-8")))
+  ln <- ln[nzchar(ln)]
+  if (length(ln) >= 2) { user <- ln[1]; pass <- ln[2]; cat("Using the login in", credFile, "
+") }
+}
+if (!nzchar(user) || !nzchar(pass)) stop("No login found: create ", credFile, " (line 1 e-mail, line 2 password) or set CDSE_USER and CDSE_PASS.")
 tok <- NULL; tokTime <- 0
 getToken <- function(force = FALSE) {
   if (!force && !is.null(tok) && as.numeric(Sys.time()) - tokTime < 420) return(tok)       # tokens last about 10 minutes
@@ -57,6 +64,8 @@ Check: (1) the same e-mail and password work at https://identity.dataspace.coper
   }
   tok <<- fromJSON(rawToChar(r$content))$access_token; tokTime <<- as.numeric(Sys.time()); tok
 }
+if ("--check" %in% args) { getToken(force = TRUE); cat("LOGIN OK: the Copernicus Data Space accepted this e-mail and password.
+"); quit(save = "no") }
 failed <- character(); done <- 0L
 for (i in seq_len(nrow(man))) {
   f <- man$file[i]; dir.create(dirname(f), recursive = TRUE, showWarnings = FALSE)
