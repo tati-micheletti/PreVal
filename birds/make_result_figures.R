@@ -12,7 +12,7 @@ reg <- c(FutureUnseen = "PreVal", FutureTainted = "Status quo (random split)", F
 cols <- c("PreVal" = "#0072B2", "Status quo (random split)" = "#D55E00", "Route-grouped CV" = "#CC79A7", "Spatial-block CV" = "#009E73", "Random CV reference (leaky)" = "grey45")
 M <- M[typeValidation != "FutureTaintedGrouped"]      # route-grouped CV is no longer shown (decision of 2026-10-21)
 M[, regime := factor(reg[typeValidation], levels = reg)]
-th <- theme_minimal(base_size = 12) + theme(legend.position = "bottom", legend.title = element_blank(), panel.grid.minor = element_blank())
+th <- theme_minimal(base_size = 12) + theme(legend.position = "bottom", legend.title = element_blank(), panel.grid.minor = element_blank(), plot.title = element_text(size = 11, face = "bold"), plot.title.position = "plot")   # smaller title so long titles are not cut off
 ci <- function(x) { x <- x[is.finite(x)]; n <- length(x); m <- mean(x); s <- if (n > 1) sd(x) / sqrt(n) * qt(.975, n - 1) else NA_real_; list(m = m, lo = m - s, hi = m + s, n = n) }
 sv <- function(p, f, w = 9, h = 5.5) ggsave(file.path(outDir, f), p, width = w, height = h, dpi = 170, bg = "white")
 

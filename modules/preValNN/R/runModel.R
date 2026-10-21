@@ -39,6 +39,9 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
                                  numberOfCovariates = planRow$numberOfCovariates, set = set, row = rows, unit = ix$unit, year = ix$year), r)
   }
   teT <- sc("test", te, teRows); vaT <- sc("val", va, vaRows)
+  dispFit <- if ("theta" %in% names(vaT)) vaT$theta[1] else NA_real_             # dispersion learned on the training rows
+  dispCal <- if (is.function(adapter$calibrate)) adapter$calibrate(vaT$pred, vaT$obs) else NA_real_   # re-estimated on this regime's validation cases (adapters.R)
+  if (is.finite(dispCal)) { teT[, lossCal := adapter$nllWith(pred, obs, dispCal)]; vaT[, lossCal := adapter$nllWith(pred, obs, dispCal)] }
   trLoss <- mean(scoreCases(fit$net, adapter, tr$x, tr$y, tr$id, fit$trainUnitsSeen, store$nUnits)$loss)
   saveRDS(rbind(teT, vaT, fill = TRUE), file.path(outputDir, paste0(modelName, "_perCase.rds")))
   data.table::fwrite(fit$history, file.path(outputDir, paste0(modelName, "_history.csv")))
@@ -59,6 +62,8 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
     trainLossBest = trLoss, valLossBest = fit$bestValLoss, bestEpoch = fit$bestEpoch, epochsRun = nrow(fit$history), epochCap = hyper$epochs %||% 100L,
     testLossMean = mean(teT$loss), testLossSD = stats::sd(teT$loss), testLossSE = stats::sd(teT$loss) / sqrt(nrow(teT)),
     testMAE = mean(teT$absErr), testRMSE = sqrt(mean(teT$sqErr)), seenShare = mean(teT$seenUnit),
+    dispFit = dispFit, dispCal = dispCal,
+    valLossCal = if (is.finite(dispCal)) mean(vaT$lossCal) else NA_real_, testLossCal = if (is.finite(dispCal)) mean(teT$lossCal) else NA_real_,
     secondsTotal = as.numeric(difftime(Sys.time(), t0, units = "secs")), modelWeight = weightsPath)
   data.table::fwrite(finalDT, finalPath)
   rm(tr, va, te, fit); gc(verbose = FALSE)

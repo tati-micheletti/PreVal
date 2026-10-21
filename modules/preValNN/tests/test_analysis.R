@@ -53,4 +53,16 @@ check(!is.null(oB$trainShare_summary) && oB$trainShare_summary$share80 == 1 && !
 check(!is.null(o$selection_by_regime) && !is.null(o$selection_contrasts), "exploratory covariate-selection tables are written and written")
 oD <- analyzeRegimes(d, file.path(tempdir(), "anaD"), nCovariatesAll = 50)
 check(!any(grepl("Grouped", oD$contrasts_pooled$contrast)) && !"FutureTaintedGrouped" %in% oD$table1_design$typeValidation, "by default route-grouped CV is left out of the analysis")
+# --- additions of 2026-10-21 (audit) ---
+check(!is.null(o$contrasts_pooled_weightings) && all(c("every split equal", "horizon bins equal within a year, then years equal") %in% o$contrasts_pooled_weightings$weighting),
+      "pooled contrasts are also reported under other weightings (the sign can depend on it)")
+check("nNegative" %in% names(o$contrasts_pooled) && all(o$contrasts_pooled$nPositive + o$contrasts_pooled$nNegative <= o$contrasts_pooled$nYears), "years with a negative value are counted next to years with a positive one")
+check("H1_OptimismTainted_minus_Internal" %in% o$contrasts_pooled$contrast, "H1 is also given as the optimism difference (the claim measure)")
+check(all(c("peak", "peakMax") %in% o$P5_shape_per_regime$measure) && all(o$P5_shape_per_regime[measure == "peakMax"]$estimate >= o$P5_shape_per_regime[measure == "peak"]$estimate - 1e-12), "peakMax (maximum over the mid-ladder levels) is reported next to the mean-based peak")
+dC <- file.path(tempdir(), "resC"); dir.create(dC, showWarnings = FALSE)       # calibrated losses present: they must be used by default, the fitted ones on request
+for (r in rows) { r3 <- data.table::copy(r); r3[, `:=`(testLossCal = testLossMean + 1, valLossCal = valLossBest + 1)]; data.table::fwrite(r3, file.path(dC, paste0(r3$modelName, "_finalDT.csv"))) }
+oC <- analyzeRegimes(dC, file.path(tempdir(), "anaC"), nCovariatesAll = 50, excludeRegimes = character(0)); oF <- analyzeRegimes(dC, file.path(tempdir(), "anaF"), nCovariatesAll = 50, excludeRegimes = character(0), lossType = "fitted")
+mC <- data.table::fread(file.path(tempdir(), "anaC", "allModels.csv")); mF <- data.table::fread(file.path(tempdir(), "anaF", "allModels.csv"))
+check(all(abs(mC$realized - (mC$testLossMean + 1)) < 1e-9) && all(mC$lossType == "calibrated") && all(abs(mF$realized - mF$testLossMean) < 1e-9) && all(mF$lossType == "fitted"),
+      "analysis uses the calibrated loss by default and the fitted-dispersion loss on request")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

@@ -24,7 +24,7 @@
        layers = {
          dims <- c(nIn + embDim, hidden); ls <- list()
          for (i in seq_len(length(dims) - 1L)) { ls[[length(ls) + 1L]] <- torch::nn_linear(dims[i], dims[i + 1L]); ls[[length(ls) + 1L]] <- torch::nn_selu() }
-         if (dropout > 0) ls[[length(ls) + 1L]] <- torch::nn_alpha_dropout(dropout)
+         if (dropout > 0) ls[[length(ls) + 1L]] <- torch::nn_dropout(dropout)       # (fixed 2026-10-21: nn_alpha_dropout is not exported by torch, so every dropout > 0 pilot configuration had failed silently)
          do.call(torch::nn_sequential, ls) })
 }
 
@@ -53,11 +53,18 @@ adapterCount <- function() {
     -(torch::torch_lgamma(y + theta) - torch::torch_lgamma(theta) - torch::torch_lgamma(y + 1) +
         theta * (logTheta - torch::torch_log(theta + mu)) + y * (logMu - torch::torch_log(theta + mu)))
   }
+  nllR <- function(mu, y, theta) -(lgamma(y + theta) - lgamma(theta) - lgamma(y + 1) + theta * log(theta / (theta + mu)) + y * log(mu / (theta + mu)))
   list(name = "count_negbin", responseType = "count", primary = "negative-binomial NLL per case",
        makeNet = function(nIn, nUnits, hyper) Net(nIn = nIn, nUnits = nUnits, hidden = hyper$hidden %||% c(128, 64),
                                                   embDim = hyper$embDim %||% 0L, dropout = hyper$dropout %||% 0,
                                                   idIntercept = isTRUE(hyper$idIntercept)),
        caseLoss = function(out, y, net) nll(out, y, net$logTheta),
+       # DISPERSION CALIBRATION (added 2026-10-21). The global theta learned on the training rows is overconfident when the route intercepts have memorised
+       # the training counts (audit: fitted median theta 48-62 against a test-optimal 2-5), and how overconfident depends on the epoch a regime stops at.
+       # After the best epoch is chosen, theta is therefore re-estimated on the regime's OWN validation cases with the predicted means held fixed;
+       # the test loss is then scored with that theta. Nothing from the test set is used. A leaky validation set gives an overconfident theta again.
+       calibrate = function(mu, y) exp(stats::optimize(function(lt) mean(nllR(mu, y, exp(lt))), c(-4, 8))$minimum),
+       nllWith = function(mu, y, disp) nllR(mu, y, disp),
        summarise = function(out, y, net) {
          mu <- as.numeric(torch::torch_exp(out)$cpu()); yy <- as.numeric(y$cpu())
          data.table::data.table(pred = mu, obs = yy, absErr = abs(mu - yy), sqErr = (mu - yy)^2, theta = as.numeric(torch::torch_exp(net$logTheta)$item()))
@@ -89,6 +96,8 @@ adapterGaussian <- function() {
                                                   embDim = hyper$embDim %||% 0L, dropout = hyper$dropout %||% 0,
                                                   idIntercept = isTRUE(hyper$idIntercept)),
        caseLoss = function(out, y, net) 0.5 * (log(2 * pi) + 2 * net$logSigma + (y - out)^2 / torch::torch_exp(2 * net$logSigma)),
+       calibrate = function(mu, y) sqrt(mean((y - mu)^2)),                       # scale re-estimated on the validation cases (see the count adapter)
+       nllWith = function(mu, y, disp) 0.5 * (log(2 * pi) + 2 * log(disp) + (y - mu)^2 / disp^2),
        summarise = function(out, y, net) {
          mu <- as.numeric(out$cpu()); yy <- as.numeric(y$cpu())
          data.table::data.table(pred = mu, obs = yy, absErr = abs(mu - yy), sqErr = (mu - yy)^2)

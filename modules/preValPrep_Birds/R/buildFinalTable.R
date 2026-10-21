@@ -6,7 +6,7 @@
 #'
 #' Rules (decided with the project lead):
 #'  * Reviere = -1 (observer could not give an exact count) is excluded from the count response.
-#'  * Land cover (CORINE 2006, 2012, 2018) and distance to woodland use the NEAREST epoch, a tie going to the earlier one.
+#'  * Land cover (CORINE 2006, 2012, 2018) and distance to woodland use the most recent epoch at or before the year (2005 uses 2006: nothing earlier exists).
 #'  * Solar radiation is not used (birdMonitor dropped it for every species, DECISIONS 2026-09-26).
 #'  * Nothing from birdMonitor is modified.
 #'
@@ -16,8 +16,10 @@
 #' `green_permanent` = grassland + orchards_and_berries + fallow + hedges (hedges only in the years where they are real), and keeps a
 #' static hedge density per route; "raw" keeps the classes as delivered.
 
+#' The epoch used for a year: the most recent epoch AT OR BEFORE the year; a year before the first epoch (2005) takes the first one (nothing earlier exists).
+#' (Changed 2026-10-21. It used to be the NEAREST epoch, which gave 2010, 2011, 2016 and 2017 a LATER map: information from after the year.)
 nearestEpoch <- function(year, epochs = c(2006L, 2012L, 2018L)) {
-  vapply(year, function(y) { d <- abs(epochs - y); epochs[which(d == min(d))[1]] }, integer(1))     # ties go to the earlier epoch
+  vapply(year, function(y) if (any(epochs <= y)) max(epochs[epochs <= y]) else min(epochs), integer(1))
 }
 
 HEDGE_YEARS <- c(2017:2021, 2024L)
@@ -96,8 +98,11 @@ buildFinalTable <- function(species, territoriesDir, chelsa, route200Landuse, ro
   message(species, ": ", n0, " route-years, ", n0 - nrow(dt), " with Reviere = -1 excluded")
   dt <- harmoniseLanduse(dt, landuseMode, suffix = "_km1")
   sites <- unique(dt[, .(SITE_ID, x, y)])
-  # static hedge density per route (mean of the years where the hedges layer is real), at 200 m
-  hed <- route200Landuse[year %in% HEDGE_YEARS, .(hedges_static_mean200 = mean(hedges_mean200, na.rm = TRUE)), by = SITE_ID]
+  # hedge density per route at 200 m from the hedge maps that exist (2017-2021, 2024): each year uses the mean of the real hedge maps up to that year
+  # (the first map, 2017, for the years before it: nothing earlier exists). It used to be the mean over ALL real years, i.e. it used maps from after the year.
+  hedMaps <- route200Landuse[year %in% HEDGE_YEARS, .(SITE_ID, mapYear = year, h = hedges_mean200)]
+  hed <- data.table::rbindlist(lapply(years, function(t) {
+    use <- hedMaps[mapYear <= max(t, min(HEDGE_YEARS))]; use[, .(hedges_static_mean200 = mean(h, na.rm = TRUE), year = t), by = SITE_ID] }))
   lu200 <- data.table::copy(route200Landuse)
   mcols <- grep("_(mean|sd)200$", names(lu200), value = TRUE)
   if (landuseMode == "merged") {
@@ -110,7 +115,7 @@ buildFinalTable <- function(species, territoriesDir, chelsa, route200Landuse, ro
     }
   }
   dt <- merge(dt, lu200, by = c("SITE_ID", "year"), all.x = TRUE)
-  dt <- merge(dt, hed, by = "SITE_ID", all.x = TRUE)
+  dt <- merge(dt, hed, by = c("SITE_ID", "year"), all.x = TRUE)
   st200 <- data.table::copy(route200Static)
   st200[, c("solar_radiation_mean200", "solar_radiation_sd200") := NULL]
   names(st200) <- sub("_(mean200|sd200)_(2006|2012|2018)$", "_\\1_e\\2", names(st200))

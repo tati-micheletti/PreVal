@@ -42,8 +42,11 @@ runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, ou
   bf <- file.path(mainModelDir, paste0(baseName, "_finalDT.csv")); hf <- file.path(mainModelDir, paste0(baseName, "_history.csv"))
   if (!file.exists(bf) || !file.exists(hf)) stop("Refit needs the base model's result and history in ", mainModelDir, ": ", baseName)
   b <- data.table::fread(bf); h <- data.table::fread(hf)
-  bestEpoch <- as.integer(b$bestEpoch[1]); lrSched <- h$lr[seq_len(bestEpoch)]
-  if (length(lrSched) != bestEpoch || anyNA(lrSched)) stop("Base model history does not cover its best epoch: ", baseName)
+  # history$lr[ep] is logged AFTER the plateau reduction of epoch ep, i.e. it is the rate used from epoch ep + 1 on (fitNet.R); the rate used DURING epoch ep is
+  # therefore the initial rate for epoch 1 and history$lr[ep - 1] afterwards (fixed 2026-10-21: every halving used to arrive one epoch early).
+  bestEpoch <- as.integer(b$bestEpoch[1]); lrSched <- c(hyper$lr %||% 1e-3, h$lr)[seq_len(bestEpoch)]
+  if (length(lrSched) != bestEpoch || anyNA(lrSched) || nrow(h) < bestEpoch) stop("Base model history does not cover its best epoch: ", baseName)
+  if (!"dispCal" %in% names(b) || !is.finite(b$dispCal[1])) stop("The base model has no calibrated dispersion (dispCal); re-run the base models with the current code: ", baseName)
   trRows <- c(manifest$row[manifest$set == "train"], manifest$row[manifest$set == "val"]); teRows <- manifest$row[manifest$set == "test"]
   stopifnot(!anyDuplicated(trRows), !any(trRows %in% teRows))
   tr <- storeSlice(store, trRows, features, device); te <- storeSlice(store, teRows, features, device)
@@ -54,6 +57,8 @@ runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, ou
   teT <- cbind(data.table::data.table(modelName = modelName, splitId = planRow$splitId, typeValidation = regime, numberOfCovariates = planRow$numberOfCovariates,
                                       set = "test", row = teRows, unit = ix$unit, year = ix$year), r)
   trLoss <- mean(scoreCases(fit$net, adapter, tr$x, tr$y, tr$id, fit$trainUnitsSeen, store$nUnits)$loss)
+  dispCal <- b$dispCal[1]                                    # a refit model has no validation cases left: it carries the dispersion calibrated by its base model
+  teT[, lossCal := adapter$nllWith(pred, obs, dispCal)]
   saveRDS(teT, file.path(outputDir, paste0(modelName, "_perCase.rds")))
   nU <- function(rows) data.table::uniqueN(idx$unit[match(rows, idx$row)])
   finalDT <- data.table::data.table(
@@ -65,6 +70,7 @@ runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, ou
     bestEpoch = bestEpoch, epochsRun = bestEpoch, epochCap = b$epochCap[1],
     testLossMean = mean(teT$loss), testLossSD = stats::sd(teT$loss), testLossSE = stats::sd(teT$loss) / sqrt(nrow(teT)),
     testMAE = mean(teT$absErr), testRMSE = sqrt(mean(teT$sqErr)), seenShare = mean(teT$seenUnit),
+    dispFit = if ("theta" %in% names(teT)) teT$theta[1] else NA_real_, dispCal = dispCal, valLossCal = b$valLossCal[1], testLossCal = mean(teT$lossCal),
     secondsTotal = as.numeric(difftime(Sys.time(), t0, units = "secs")), modelWeight = NA_character_)
   data.table::fwrite(finalDT, finalPath)
   finalDT

@@ -1,14 +1,15 @@
 #' Across-year test of a vector of yearly values: mean, t interval, exact sign-flip p-value, equivalence to +/- margin.
 .yearTest <- function(x, equivMargin = NULL) {
   x <- x[is.finite(x)]; n <- length(x)
-  if (n == 0) return(data.table::data.table(estimate = NA_real_, lo = NA_real_, hi = NA_real_, pSignFlip = NA_real_, nYears = 0L, nPositive = 0L, equivalent = NA))
+  if (n == 0) return(data.table::data.table(estimate = NA_real_, lo = NA_real_, hi = NA_real_, pSignFlip = NA_real_, nYears = 0L, nPositive = 0L, nNegative = 0L, equivalent = NA))
   est <- mean(x); se <- if (n > 1) stats::sd(x) / sqrt(n) else NA_real_
   tc <- if (n > 1) stats::qt(0.975, n - 1) else NA_real_
   p <- NA_real_
   if (n >= 2 && n <= 18) { sg <- as.matrix(expand.grid(rep(list(c(-1, 1)), n))); p <- mean(abs(sg %*% x / n) >= abs(est) - 1e-12) }   # exact up to 18 forecast years
   eq <- NA
   if (!is.null(equivMargin) && n > 1) { t90 <- stats::qt(0.95, n - 1); eq <- (est - t90 * se > -equivMargin) && (est + t90 * se < equivMargin) }
-  data.table::data.table(estimate = est, lo = est - tc * se, hi = est + tc * se, pSignFlip = p, nYears = n, nPositive = sum(x > 0), equivalent = eq)
+  # nPositive = years with a value > 0 and nNegative = years with a value < 0. For a contrast "A minus B" of LOSSES a positive year means A did WORSE (higher loss).
+  data.table::data.table(estimate = est, lo = est - tc * se, hi = est + tc * se, pSignFlip = p, nYears = n, nPositive = sum(x > 0), nNegative = sum(x < 0), equivalent = eq)
 }
 
 #' Pre-specified analysis of the five-regime experiment (see birds/ANALYSIS_PLAN_BIRDS.md). Everything is computed from the per-model
@@ -18,10 +19,15 @@
 #'   reported = loss on the regime's own validation set at the best epoch (what that regime would report)
 #'   realized = loss on the shared test set (the forecast year)
 #'   optimism = realized - reported
+#' lossType (changed 2026-10-21 after the audit): "calibrated" (default) = the negative-binomial dispersion is re-estimated on the regime's own validation cases
+#'   after the best epoch is chosen (the fitted global theta is overconfident when route intercepts have memorised the training counts, and by a regime-dependent
+#'   amount because the regimes stop at different epochs); "fitted" = the loss with the dispersion learned on the training rows. Both are reported (two folders).
 #' Inference: the independent unit is the FORECAST YEAR (splits sharing a forecast year share their test cases). Every estimate is first
 #' averaged within forecast year; across years we report the mean, a t interval and an EXACT sign-flip p-value (no bootstrap over ~15 clusters; exact up to 18 forecast years).
 #' Contrasts (all paired on identical test cases; negative = the first regime forecasts better):
-#'   H1   FutureTainted - Internal                 (>0: the status quo forecasts worse than the leaky reference says)
+#'   H1   FutureTainted - Internal                 (>0: the status quo forecasts worse than the leaky reference. NOTE: Internal also trains on the rest of the forecast year
+#'                                                  and on the years between the window and the forecast, so this gap is leakage PLUS data recency, not a pure measure of what CV claims.)
+#'   H1_OptimismTainted_minus_Internal             (the claim measure: how much more the status quo's reported loss understates its forecast loss than Internal's does; >0 = more optimistic)
 #'   H2   FutureUnseen (PreVal) - FutureTainted    (<0)
 #'   P3   PreVal - Spatial and Spatial - Tainted   (both <0)
 #'   P4   Tainted - Grouped, Grouped - Spatial, Spatial - PreVal   (each >= 0: the weak ordering of the leak removal)
@@ -29,13 +35,17 @@
 #'   P5   covariate ladder: penalty vs the simplest level, END and PEAK per regime and the regime differences
 #' PreVal is NEVER compared with Internal (Internal is leaky by construction and enters only H1).
 #' @param nCovariatesAll how many covariates `Inf` stands for (for the x axis and the log2 slope)
-analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, excludeRegimes = "FutureTaintedGrouped") {
+analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, excludeRegimes = "FutureTaintedGrouped", lossType = c("calibrated", "fitted")) {
+  lossType <- match.arg(lossType)
   dir.create(outDir, recursive = TRUE, showWarnings = FALSE)
   files <- list.files(modelDir, pattern = "_finalDT\\.csv$", full.names = TRUE)
   if (!length(files)) stop("No result files in ", modelDir)
   M <- data.table::rbindlist(lapply(files, data.table::fread), fill = TRUE)
   M <- M[!typeValidation %in% excludeRegimes]      # route-grouped CV is no longer analysed (decision of 2026-10-21); its models stay on disk
-  M[, `:=`(reported = valLossBest, realized = testLossMean)]
+  useCal <- lossType == "calibrated" && all(c("testLossCal", "valLossCal") %in% names(M)) && !anyNA(M$testLossCal) && !anyNA(M$valLossCal)
+  if (lossType == "calibrated" && !useCal) warning("analyzeRegimes: no calibrated losses in these result files (older runs); using the fitted-dispersion losses.")
+  M[, lossType := if (useCal) "calibrated" else "fitted"]
+  if (useCal) M[, `:=`(reported = valLossCal, realized = testLossCal)] else M[, `:=`(reported = valLossBest, realized = testLossMean)]
   M[, `:=`(optimism = realized - reported, trainTestGap = realized - trainLossBest,
            complexity = ifelse(is.infinite(numberOfCovariates), nCovariatesAll, numberOfCovariates),
            windowLength = historyEnd - windowStart + 1L, capBound = epochsRun >= epochCap)]
@@ -58,7 +68,12 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, exc
   contrast("P4_Tainted_minus_Grouped", "FutureTainted", "FutureTaintedGrouped")
   contrast("P4_Grouped_minus_Spatial", "FutureTaintedGrouped", "FutureTaintedSpatial")
   contrast("P4_Spatial_minus_PreVal", "FutureTaintedSpatial", "FutureUnseen")
-  cn <- grep("^(H1|H2|P3|P4)_", names(W), value = TRUE)
+  if (all(c("optimism_FutureTainted", "optimism_Internal") %in% names(W))) W[, H1_OptimismTainted_minus_Internal := optimism_FutureTainted - optimism_Internal]
+  # spatial-test arm (forecasting into new places): the PreVal + spatial-block regime against the three others
+  contrast("P6_Combined_minus_PreVal", "FutureUnseenSpatial", "FutureUnseen")
+  contrast("P6_Combined_minus_Spatial", "FutureUnseenSpatial", "FutureTaintedSpatial")
+  contrast("P6_Combined_minus_Tainted", "FutureUnseenSpatial", "FutureTainted")
+  cn <- grep("^(H1|H2|P3|P4|P6)_", names(W), value = TRUE)
   data.table::fwrite(W, file.path(outDir, "pairedContrasts_perSplit.csv"))
   if (!length(cn)) { message("analyzeRegimes: none of the standard regime contrasts is available in this run; writing the model table only."); return(invisible(out)) }
   Wl <- data.table::melt(W, id.vars = id, measure.vars = cn, variable.name = "contrast", value.name = "diff")
@@ -72,6 +87,14 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, exc
   Wl[, horizonBin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]
   out$contrasts_by_horizon <- byYear(Wl, "diff", c("contrast", "horizonBin"))
   out$contrasts_by_horizon_each <- byYear(Wl, "diff", c("contrast", "horizon"))      # every forecast distance on its own
+  # The pooled estimate depends on the weighting because the design has one split for the earliest forecast year and over a hundred for the latest, and long
+  # horizons exist only for late years (audit 2026-10-21: the sign of the pooled PreVal-minus-status-quo contrast flipped between weightings). All are reported.
+  yb <- Wl[, .(v = mean(diff, na.rm = TRUE)), by = .(contrast, testYear, horizonBin)]
+  out$contrasts_pooled_weightings <- data.table::rbindlist(list(
+    Wl[, .(estimate = mean(diff, na.rm = TRUE), weighting = "every split equal"), by = contrast],
+    yb[, .(v = mean(v)), by = .(contrast, testYear)][, .(estimate = mean(v), weighting = "every forecast year equal (the pooled estimate above)"), by = contrast],
+    yb[, .(v = mean(v)), by = .(contrast, testYear)][, .(estimate = mean(v), weighting = "horizon bins equal within a year, then years equal"), by = contrast],
+    Wl[, .(v = mean(diff, na.rm = TRUE)), by = .(contrast, horizonBin)][, .(estimate = mean(v), weighting = "every horizon bin equal"), by = contrast]))
 
   out$table1_design <- M[, .(nTrain = mean(nTrain), nVal = mean(nVal), nTest = mean(nTest), unitsTrain = mean(nUnitsTrain), unitsTest = mean(nUnitsTest), models = .N), by = typeValidation]
   out$reported_realized <- data.table::rbindlist(lapply(c("reported", "realized", "optimism"), function(v) byYear(M, v, c("typeValidation", "complexity"))[, measure := v]))
@@ -90,14 +113,15 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, exc
     kmin <- as.character(min(lv)); kmax <- as.character(max(lv)); kmid <- as.character(setdiff(lv, c(min(lv), max(lv))))
     wd <- data.table::dcast(M, typeValidation + splitId + replicate + testYear + horizon ~ complexity, value.var = "realized")
     wd[, end := get(kmax) - get(kmin)]
-    wd[, peak := rowMeans(.SD) - get(kmin), .SDcols = kmid]
-    out$P5_shape_per_regime <- data.table::rbindlist(lapply(c("end", "peak"), function(v) byYear(wd, v, "typeValidation")[, measure := v]))
+    wd[, peak := rowMeans(.SD) - get(kmin), .SDcols = kmid]                    # 'peak' = MEAN of the mid-ladder levels minus the smallest level (a hump summary, not the maximum)
+    wd[, peakMax := do.call(pmax, .SD) - get(kmin), .SDcols = kmid]            # peakMax = the MAXIMUM over the mid-ladder levels minus the smallest level (added 2026-10-21)
+    out$P5_shape_per_regime <- data.table::rbindlist(lapply(c("end", "peak", "peakMax"), function(v) byYear(wd, v, "typeValidation")[, measure := v]))
     slopes <- M[, .(slope = if (.N >= 3) unname(stats::coef(stats::lm(realized ~ log2(complexity)))[2]) else NA_real_, testYear = testYear[1]),
                 by = .(typeValidation, splitId, replicate)]
     out$P5_slope_per_regime <- byYear(slopes[is.finite(slope)], "slope", "typeValidation", equivMargin = margin)
-    sh <- data.table::dcast(wd, splitId + replicate + testYear ~ typeValidation, value.var = c("end", "peak"))
+    sh <- data.table::dcast(wd, splitId + replicate + testYear ~ typeValidation, value.var = c("end", "peak", "peakMax"))
     dif <- list()
-    for (m in c("end", "peak")) for (pr in list(c("FutureUnseen", "FutureTainted"), c("FutureUnseen", "FutureTaintedSpatial"), c("FutureTaintedSpatial", "FutureTainted"))) {
+    for (m in c("end", "peak", "peakMax")) for (pr in list(c("FutureUnseen", "FutureTainted"), c("FutureUnseen", "FutureTaintedSpatial"), c("FutureTaintedSpatial", "FutureTainted"))) {
       a <- paste0(m, "_", pr[1]); b <- paste0(m, "_", pr[2])
       if (all(c(a, b) %in% names(sh))) { sh[, d := get(a) - get(b)]; dif[[paste(m, pr[1], "minus", pr[2])]] <- byYear(sh, "d", character(0))[, contrast := paste(m, pr[1], "minus", pr[2])] }
     }
@@ -187,8 +211,9 @@ compareValidationArms <- function(dirA, dirB, outDir = NULL, contrasts = c("H2_P
 compareRefit <- function(mainDir, refitDir, outDir = NULL) {
   A <- data.table::fread(file.path(mainDir, "allModels.csv")); B <- data.table::fread(file.path(refitDir, "allModels.csv"))
   key <- c("splitId", "complexity", "replicate", "testYear", "horizon")
-  w <- merge(data.table::dcast(A, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = "testLossMean"),
-             data.table::dcast(B, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = "testLossMean"), by = key)
+  lc <- if (all(c("realized") %in% names(A)) && "realized" %in% names(B)) "realized" else "testLossMean"        # the loss the analysis used (calibrated by default)
+  w <- merge(data.table::dcast(A, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = lc),
+             data.table::dcast(B, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = lc), by = key)
   prs <- list(c("FutureUnseenRefit", "FutureTaintedRefit", "PreVal-refit minus status-quo-refit"), c("FutureUnseenRefit", "FutureTainted", "PreVal-refit minus status quo (plain)"),
               c("FutureUnseenRefit", "FutureUnseen", "effect of refitting PreVal"), c("FutureTaintedRefit", "FutureTainted", "effect of refitting the status quo"))
   w[, bin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]

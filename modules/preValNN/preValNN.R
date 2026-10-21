@@ -25,6 +25,9 @@ defineModule(sim, list(
     defineParameter("minTrainYears", "numeric", 2, 1, NA, "Minimum number of training years of PreVal in a window s..e."),
     defineParameter("valYears", "numeric", 1, 1, 5, "Number of validation years of PreVal (the last years of the window). 2 = two-year-validation variant."),
     defineParameter("planRegimes", "character", "", NA, NA, "Comma-separated regimes that get models (default: all five). Use FutureUnseenRefit,FutureTaintedRefit for the refit arm (post-hoc); the splits are still built for all five regimes."),
+    defineParameter("arm", "character", "main", NA, NA, "main = the five-regime design; spatialTest = forecasting into NEW places: the test cases lie in spatial blocks no regime trains or validates on; regimes PreVal, status quo, spatial-block CV and PreVal + spatial blocks (run with runTag = spatialTest)."),
+    defineParameter("spatialTestShare", "numeric", 0.25, 0.05, 0.5, "spatialTest arm: share of the forecast-year cases that form the test set (whole blocks)."),
+    defineParameter("spatialValShare", "numeric", 0.25, 0.05, 1, "spatialTest arm: validation size of every regime as a share of the validation-year cases (the size the PreVal + spatial regime can reach)."),
     defineParameter("baseRunTag", "character", "", NA, NA, "Refit arm: tag of the run folder that holds the base models (empty = the main run)."),
     defineParameter("runTag", "character", "", NA, NA, "Suffix of the run folder, e.g. val2 for the two-year-validation arm (the ladder file is chosen separately)."),
     defineParameter("horizons", "character", paste(1:19, collapse = ","), NA, NA, "Comma-separated forecast distances T - e (default: every distance the data allow, 1 to 19)."),
@@ -52,7 +55,12 @@ defineModule(sim, list(
     defineParameter("onlyMissing", "logical", FALSE, NA, NA, "Mop-up: run only models without a result."),
     defineParameter("modComplex", "character", "all", NA, NA, "Run only this number of covariates."),
     defineParameter("useGPU", "logical", FALSE, NA, NA, "Use a GPU if available."),
-    defineParameter("stage", "character", "all", NA, NA, "'all' | 'design' (plan, manifests, store; once) | 'train' (one SLURM task; needs runSlice) | 'analyze'.")
+    defineParameter("hyperOverride", "character", "", NA, NA, "Arm-specific change of the fixed network settings, 'key=value;key=value', e.g. 'idIntercept=FALSE' (route information off) or 'idDecay=0.01' (strong shrinkage of the route intercepts). Applied in the rank and train stages."),
+    defineParameter("rankPerWindow", "logical", TRUE, NA, NA, "TRUE (default since 2026-10-21): the covariate ladder of a window s..e is ranked ONLY on the training years of that window (s..e-valYears, i.e. PreVal's training years: no validation or test year of any regime), once per window, and is identical for every regime and forecast year of the window. FALSE: the single global ranking (old behaviour)."),
+    defineParameter("rankingsFromTag", "character", "", NA, NA, "Stage rank: reuse the per-window rankings of the run folder with this tag (e.g. the main run) for the windows it has, so arms on the same windows share their covariate order. Refit runs always copy their base run's rankings."),
+    defineParameter("nRepImportance", "numeric", 5, 1, 50, "Permutation repeats per covariate group in the per-window ranking."),
+    defineParameter("groupR", "numeric", 0.9, 0.5, 1, "|r| above which covariates are permuted together in the per-window ranking."),
+    defineParameter("stage", "character", "all", NA, NA, "'all' | 'design' (plan, manifests, store; once) | 'rank' (per-window covariate rankings; needs the design; runSlice splits the windows) | 'train' (one SLURM task; needs runSlice) | 'analyze'.")
   ),
   inputObjects = bindrows(
     expectsInput("finalTable", "data.table", "Final table for modeling", sourceURL = NA),
@@ -67,11 +75,12 @@ defineModule(sim, list(
 
 doEvent.preValNN <- function(sim, eventTime, eventType) {
   stage <- P(sim)$stage
-  if (!stage %in% c("all", "design", "train", "analyze")) stop("preValNN parameter 'stage' must be one of: all, design, train, analyze.")
+  if (!stage %in% c("all", "design", "rank", "train", "analyze")) stop("preValNN parameter 'stage' must be one of: all, design, rank, train, analyze.")
   num <- function(s) as.numeric(strsplit(s, ",")[[1]])
   switch(eventType,
     init = {
-      if (stage %in% c("all", "design", "train")) sim <- scheduleEvent(sim, time(sim), "preValNN", "prepareExperiment")
+      if (stage %in% c("all", "design", "rank", "train")) sim <- scheduleEvent(sim, time(sim), "preValNN", "prepareExperiment")
+      if (stage %in% c("all", "rank")) sim <- scheduleEvent(sim, time(sim), "preValNN", "rankWindows")
       if (stage %in% c("all", "train")) sim <- scheduleEvent(sim, time(sim), "preValNN", "trainExperiment")
       if (stage %in% c("all", "analyze")) sim <- scheduleEvent(sim, time(sim), "preValNN", "compareExperiment")
     },
@@ -85,7 +94,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         message("Saved plan and split manifests found; using them.")
         sim$experimentPlan <- data.table::fread(planPath)
       } else {
-        if (stage == "train") stop("stage = 'train' needs the output of stage = 'design' in ", outDir)
+        if (stage %in% c("train", "rank")) stop("stage = '", stage, "' needs the output of stage = 'design' in ", outDir)
         tab <- data.table::as.data.table(sim$finalTable); idx <- buildCaseIndex(tab, P(sim)$unitCol, P(sim)$yearCol, "x", "y")
         bk <- P(sim)$blockKm
         if (is.na(bk)) bk <- readRDS(file.path(root, "blockSize.rds"))$blockKm
@@ -96,7 +105,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
                             firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
-                            registryPath = file.path(outDir, "seedRegistry.csv"))
+                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare)
         lp <- sim$networkSettings$lastPilotYear   # strict (forward) pilot only: it must never have seen a forecast year
         if (!is.null(lp) && !is.na(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)
@@ -111,6 +120,41 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       if (!P(sim)$modComplex %in% c("all", as.character(sim$experimentPlan$numberOfCovariates)))
         stop("modComplex = ", P(sim)$modComplex, ". Available: all, ", paste(unique(sim$experimentPlan$numberOfCovariates), collapse = ", "))
     },
+    rankWindows = {
+      # One covariate ranking per WINDOW s..e, from PreVal's TRAINING years of that window only (s..e-valYears): no validation year and no test year of any regime
+      # enters the order, and the order is identical for every regime and every forecast year of the window (so the ladder is the same covariates for all regimes).
+      sp <- P(sim)$species; tag <- paste0(if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else "", if (nzchar(P(sim)$runTag)) paste0("_", P(sim)$runTag) else "")
+      root <- file.path(outputPath(sim), sp); outDir <- file.path(root, paste0("run", tag)); rankDir <- file.path(outDir, "rankings"); dir.create(rankDir, recursive = TRUE, showWarnings = FALSE)
+      slice <- if (anyNA(P(sim)$runSlice)) NULL else P(sim)$runSlice
+      plan <- data.table::as.data.table(sim$experimentPlan)
+      win <- unique(plan[, .(windowStart, historyEnd, valYears)]); data.table::setorder(win, windowStart, historyEnd)
+      if (!is.null(slice)) win <- win[(seq_len(.N) - 1L) %% slice[2] == (slice[1] - 1L)]
+      isRefit <- nzchar(P(sim)$planRegimes) && all(grepl("Refit$", trimws(strsplit(P(sim)$planRegimes, ",")[[1]])))
+      fromTag <- if (isRefit) P(sim)$baseRunTag else P(sim)$rankingsFromTag
+      fromDir <- if (isRefit || nzchar(fromTag)) file.path(root, paste0("run", if (nzchar(fromTag) && fromTag != "main") paste0("_", fromTag) else ""), "rankings") else NA_character_   # "main" = the main run folder
+      tab <- data.table::as.data.table(sim$finalTable); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
+      rk0 <- data.table::fread(file.path(root, P(sim)$rankingFile)); feats <- rk0$Feature
+      device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"; torch::torch_set_num_threads(as.integer(P(sim)$torchThreads))
+      hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch; adapter <- getAdapter(P(sim)$responseType)
+      store <- NULL; nDone <- 0L
+      for (i in seq_len(nrow(win))) {
+        s <- win$windowStart[i]; e <- win$historyEnd[i]; v <- win$valYears[i]; f <- file.path(rankDir, sprintf("s%d_e%d.csv", s, e)); yrs <- paste0(s, "-", e - v)
+        if (file.exists(f) && !isTRUE(P(sim)$reRunModels)) next
+        src <- if (!is.na(fromDir)) file.path(fromDir, sprintf("s%d_e%d.csv", s, e)) else NA_character_
+        if (!is.na(src) && file.exists(src)) {
+          r <- data.table::fread(src)
+          if (!identical(unique(r$rankYears), yrs)) stop("The ranking to reuse (", src, ") was made on years ", unique(r$rankYears), " but this window needs ", yrs)
+          data.table::fwrite(r, f); next
+        }
+        if (isRefit) stop("Refit run: the base run has no ranking for window ", s, "-", e, " (", src, "); run the rank stage of the base run first.")
+        if (is.null(store)) store <- buildCaseStore(tab, idx, feats, P(sim)$response)
+        message(sprintf("ranking window %d-%d on training years %s (%d of %d in this process)", s, e, yrs, i, nrow(win)))
+        r <- rankCovariates(store, feats, adapter, hyper, seed = stringSeed(paste("rankWindow", s, e, v)), mode = "random", rankYears = s:(e - v),
+                            nRep = P(sim)$nRepImportance, groupR = P(sim)$groupR, device = device, zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience)
+        r[, `:=`(windowStart = s, historyEnd = e, valYears = v, rankYears = yrs)]; data.table::fwrite(r, f); nDone <- nDone + 1L; gc(verbose = FALSE)
+      }
+      message(sprintf("rankWindows [%s]: %d windows in this process, %d ranked now, the others existed or were copied.", sp, nrow(win), nDone))
+    },
     trainExperiment = {
       sp <- P(sim)$species; tag <- paste0(if (nzchar(P(sim)$ladderTag)) paste0("_", P(sim)$ladderTag) else "", if (nzchar(P(sim)$runTag)) paste0("_", P(sim)$runTag) else "")
       root <- file.path(outputPath(sim), sp); outDir <- file.path(root, paste0("run", tag))
@@ -121,7 +165,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       store <- buildCaseStore(tab, idx, feats, P(sim)$response)
       device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"
       torch::torch_set_num_threads(as.integer(P(sim)$torchThreads))
-      hyper <- sim$networkSettings; hyper$epochs <- P(sim)$epoch
+      hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch
       adapter <- getAdapter(P(sim)$responseType)
       modelDir <- file.path(outDir, "testedModels"); dir.create(file.path(modelDir, "errors"), recursive = TRUE, showWarnings = FALSE)
       work <- data.table::copy(sim$experimentPlan)
@@ -130,11 +174,15 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       if (isTRUE(P(sim)$onlyMissing)) work <- work[!file.exists(file.path(modelDir, paste0(modelName, "_finalDT.csv")))]
       if (!is.null(slice)) work <- work[(seq_len(.N) - 1L) %% slice[2] == (slice[1] - 1L)]
       message(sprintf("This process runs %d of %d models (device %s).", nrow(work), nrow(sim$experimentPlan), device))
-      manifests <- new.env(); errs <- list()
+      manifests <- new.env(); errs <- list(); rkWin <- new.env()
       for (i in seq_len(nrow(work))) {
         pr <- work[i]; baseRg <- sub("Refit$", "", pr$typeValidation); key <- paste(pr$splitId, baseRg)
         if (is.null(manifests[[key]])) manifests[[key]] <- readManifest(file.path(outDir, "splits"), pr$splitId, baseRg)
-        ff <- featuresForLevel(rk, pr$numberOfCovariates)
+        if (isTRUE(P(sim)$rankPerWindow)) {        # the ladder of this window: ranked on its training years only (rankWindows)
+          wk <- sprintf("s%d_e%d", pr$windowStart, pr$historyEnd)
+          if (is.null(rkWin[[wk]])) { wf <- file.path(outDir, "rankings", paste0(wk, ".csv")); if (!file.exists(wf)) stop("No ranking for window ", wk, ": run stage 'rank' first (", wf, ")"); rkWin[[wk]] <- data.table::fread(wf) }
+          ff <- featuresForLevel(rkWin[[wk]], pr$numberOfCovariates)
+        } else ff <- featuresForLevel(rk, pr$numberOfCovariates)
         message(sprintf("[%d/%d] %s", i, nrow(work), pr$modelName))
         res <- tryCatch(runModel(store, manifests[[key]], pr, ff, adapter, hyper, modelDir, reRun = P(sim)$reRunModels, device = device,
                                  zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience,
@@ -158,7 +206,8 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       dp <- readRDS(file.path(outDir, "designParams.rds")); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       au <- auditManifests(idx, plan, file.path(outDir, "splits"), dp$spatial); data.table::fwrite(au, file.path(outDir, "splitChecks_final.csv"))
       rk <- data.table::fread(file.path(root, P(sim)$rankingFile))
-      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk))
+      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk), lossType = "calibrated")   # primary (dispersion re-estimated on each regime's validation cases)
+      analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis_fittedTheta"), nCovariatesAll = nrow(rk), lossType = "fitted")                    # sensitivity: dispersion as learned on the training rows
       tab <- data.table::as.data.table(sim$finalTable)
       cs <- coefficientStability(tab[tab[[P(sim)$yearCol]] <= P(sim)$endYear], P(sim)$response, featuresForLevel(rk, 10), P(sim)$yearCol)
       if (!is.null(cs)) data.table::fwrite(cs, file.path(outDir, "analysis", "coefficientStability_top10.csv"))

@@ -22,13 +22,13 @@ defineModule(sim, list(
     defineParameter("unitCol", "character", "SITE_ID", NA, NA, "Column of the unit that repeats across years (route)."),
     defineParameter("yearCol", "character", "year", NA, NA, "Year column."),
     defineParameter("crs", "numeric", 3035, NA, NA, "EPSG code of the x/y coordinates (projected, metres)."),
-    defineParameter("pilotMode", "character", "random", NA, NA, "random: the pilot (and the block size) use all years with a random hold-out, as the ranking does; forward: only years <= lastPilotYear (strict, never sees a forecast year)."),
+    defineParameter("pilotMode", "character", "random", NA, NA, "balanced: every configuration is judged under a random hold-out AND under forward geometries (train up to the last year minus 1 or 5, validate on the last year), the mean loss decides; random: random hold-out only (tunes route-intercept shrinkage in the status quo's own geometry); forward: only years <= lastPilotYear (strict, never sees a forecast year)."),
     defineParameter("lastPilotYear", "numeric", NA_real_, NA, NA, "Only for pilotMode = forward: last pre-test year (the year before the first forecast year of the design)."),
     defineParameter("pilotEpochs", "numeric", 100, 10, 500, "Epoch cap in the pilot."),
     defineParameter("idMode", "character", "intercept", NA, NA, paste0("Route information in the network, FIXED by design: intercept (one shrunk number per route added to the log-mean; analogue of a random intercept), none (covariates only) or concat (8-d route embedding fed with the covariates).")),
     defineParameter("rankEpochs", "numeric", 100, 10, 500, "Epoch cap of the global ranking model."),
     defineParameter("rankingModes", "character", "random,forward", NA, NA, "Comma-separated ranking modes to compute; the first is the primary ladder."),
-    defineParameter("rankYearsForward", "numeric", NA_real_, NA, NA, "Forward-mode ranking uses years <= this (default: lastPilotYear = strictly pre-test)."),
+    defineParameter("rankYearsForward", "numeric", NA_real_, NA, NA, "Forward-mode ranking uses years <= this. If both this and lastPilotYear are NA (the birds default) the forward ladder uses ALL years: it trains on the earlier 60% and holds out the later 40%, so it is a forward-in-time ordering but NOT strictly pre-test (it sees forecast years); documented as such in the plan (audit 2026-10-21)."),
     defineParameter("nRepImportance", "numeric", 5, 1, 50, "Permutation repeats per covariate group."),
     defineParameter("groupR", "numeric", 0.9, 0.5, 1, "|r| above which covariates are permuted together."),
     defineParameter("globalSeed", "numeric", 20261017, NA, NA, "Seed of the pilot and the ranking model."),
@@ -86,7 +86,7 @@ doEvent.preValNN_Global <- function(sim, eventTime, eventType) {
       modes <- trimws(strsplit(P(sim)$rankingModes, ",")[[1]]); rks <- list()
       for (m in modes) {
         message("preValNN_Global [", sp, "]: ranking, mode = ", m, " ...")
-        ry <- if (m == "forward") { fy <- if (is.na(P(sim)$rankYearsForward)) lastPilot else P(sim)$rankYearsForward; if (is.na(fy)) NULL else sort(unique(idx$year[idx$year <= fy])) } else NULL   # forward: train on the earlier 60% of the years, hold out the later ones
+        ry <- if (m == "forward") { fy <- if (is.na(P(sim)$rankYearsForward)) lastPilot else P(sim)$rankYearsForward; if (is.na(fy)) NULL else sort(unique(idx$year[idx$year <= fy])) } else if (!is.na(lastPilot)) sort(unique(idx$year[idx$year <= lastPilot])) else NULL   # forward: train on the earlier 60% of the years, hold out the later ones; random: years up to lastPilotYear when given (the global ranking is then pre-test only; the ladder itself is ranked per window, see preValNN rankWindows)
         rk <- rankCovariates(store, feats, adapter, hyper, seed = seed + 1L, mode = m, rankYears = ry, nRep = P(sim)$nRepImportance,
                              groupR = P(sim)$groupR, device = device, zClip = P(sim)$zClip)
         rk[, mode := m]; rk[, baselineLoss := attr(rk, "baselineLoss")]

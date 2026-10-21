@@ -1,17 +1,20 @@
 # Birds: run the generic validation engine for ONE species (each species is its own experiment).
 # Same conventions as runMe.R (caribou): stage and settings come from PREVAL_* environment variables, one SLURM array task = one slice.
 #   PREVAL_SPECIES   Chloris_chloris | Dendrocopos_major          (default Chloris_chloris)
-#   PREVAL_STAGE     prep (network pilot + ranking + block size, then design) | design | train | analyze | all
+#   PREVAL_STAGE     prep (network pilot + global ranking + block size, then design) | design | rank (per-window covariate rankings on PreVal's training years;
+#                    PREVAL_SLICE_ID / PREVAL_SLICE_COUNT split the windows; PREVAL_RANKFROM=<tag> reuses another run's rankings; PREVAL_RANKPERWINDOW=0 = old global ladder) | train | analyze | all
 #   PREVAL_OUT       output folder (default outputs/birds)
 #   PREVAL_FINAL     folder with final_<species>.rds (default data_birds)
 #   PREVAL_LADDER    "" (primary ladder) | forward (sensitivity ladder from featureTable_forward.csv)
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS, PREVAL_PATIENCE, PREVAL_REPLICATES, PREVAL_START, PREVAL_END, PREVAL_MINTRAIN (default 2),
 #   PREVAL_VALYEARS (default 1; 2 = two-year validation arm, run with PREVAL_TAG=val2), PREVAL_HORIZONS (default 1..19 = every distance the data allow),
-#   PREVAL_IDMODE (intercept | none | concat; default intercept), PREVAL_PILOTMODE (random = all years, default | forward = strict, needs
-#   PREVAL_LASTPILOT, e.g. 2008),
+#   PREVAL_IDMODE (intercept | none | concat; default intercept), PREVAL_PILOTMODE (balanced = random hold-out AND forward geometries, mean loss decides, default |
+#   random = random hold-out only (the old default; tunes the route-intercept shrinkage in the status quo's own geometry) | forward = strict, needs PREVAL_LASTPILOT, e.g. 2008),
 #   PREVAL_MINTRAINFRAC (sanity limit: skip splits where blocking keeps less of the status-quo training pool; default 0.5, which excludes
 #   nothing for the birds; the kept share is stored per split), PREVAL_MINTRAIN_CASES (absolute minimum training cases, default 200),
 #   PREVAL_SLICE_ID / PREVAL_SLICE_COUNT (train only: run that slice instead of the SLURM array position; used for the small EVE test),
+#   PREVAL_HYPER (arm-specific network settings 'key=value;key=value': idIntercept=FALSE = route information off (tag none); idDecay=0.01 = strong intercept shrinkage (tag idd2)),
+#   PREVAL_ARM (main | spatialTest: forecasting into NEW places, regimes PreVal / status quo / spatial / PreVal+spatial; use PREVAL_TAG=spatialTest),
 #   PREVAL_PLANREGIMES (e.g. FutureUnseenRefit,FutureTaintedRefit for the refit arm, run with PREVAL_TAG=refit; needs the main run's models),
 #   PREVAL_BASETAG (tag of the run folder with the base models; default none = main run),
 #   PREVAL_PILOT_EPOCHS, PREVAL_ONLY_MISSING, PREVAL_THREADS, PREVAL_NEW_PLAN
@@ -25,10 +28,10 @@ if (nzchar(Sys.getenv("SLURM_JOB_ID"))) {          # cluster job: only add the p
 envNum <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) as.numeric(v) else default }
 envChr <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v else default }
 species <- envChr("PREVAL_SPECIES", "Chloris_chloris")
-stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "train", "analyze", "all"))
+stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "rank", "train", "analyze", "all"))
 outPath <- envChr("PREVAL_OUT", "outputs/birds"); finalDir <- envChr("PREVAL_FINAL", "data_birds")
 ladder <- envChr("PREVAL_LADDER", "")
-sliceTask <- if (stage == "train") {
+sliceTask <- if (stage %in% c("train", "rank")) {
   if (nzchar(Sys.getenv("PREVAL_SLICE_COUNT"))) c(envNum("PREVAL_SLICE_ID", 1), envNum("PREVAL_SLICE_COUNT", 1))   # explicit slice (the EVE test: 1 in 2000)
   else c(envNum("SLURM_ARRAY_TASK_ID", 1), envNum("SLURM_ARRAY_TASK_COUNT", 1))
 } else c(NA_real_, NA_real_)
@@ -36,7 +39,7 @@ startYear <- envNum("PREVAL_START", 2005); endYear <- envNum("PREVAL_END", 2024)
 horizons <- envChr("PREVAL_HORIZONS", paste(1:19, collapse = ",")); idMode <- envChr("PREVAL_IDMODE", "intercept")
 # Network pilot: random hold-out over all years (default, like the covariate ranking) or strict forward (only years <= lastPilotYear;
 # the design then refuses any forecast year <= lastPilotYear).
-pilotMode <- envChr("PREVAL_PILOTMODE", "random"); lastPilotYear <- envNum("PREVAL_LASTPILOT", NA_real_)
+pilotMode <- envChr("PREVAL_PILOTMODE", "balanced"); lastPilotYear <- envNum("PREVAL_LASTPILOT", NA_real_)    # balanced (default since 2026-10-21): random hold-out + forward geometries, mean loss decides
 
 suppressMessages({library(SpaDES.core); library(data.table)})
 options(spades.useRequire = FALSE, spades.moduleCodeChecks = FALSE, reproducible.useMemoise = TRUE)
@@ -53,14 +56,16 @@ if (stage %in% c("prep", "all")) {
   runStage("preValNN_Global", list(preValNN_Global = c(common, list(pilotMode = pilotMode, lastPilotYear = lastPilotYear, pilotEpochs = envNum("PREVAL_PILOT_EPOCHS", 100),
                                                                      rankEpochs = envNum("PREVAL_EPOCHS", 100), crs = 3035, idMode = idMode))))
 }
-if (stage %in% c("prep", "design", "train", "analyze", "all")) {
+if (stage %in% c("prep", "design", "rank", "train", "analyze", "all")) {
   runStage("preValNN", list(preValNN = c(common, list(
-    stage = c(prep = "design", design = "design", train = "train", analyze = "analyze", all = "all")[[stage]],
+    stage = c(prep = "design", design = "design", rank = "rank", train = "train", analyze = "analyze", all = "all")[[stage]],
+    rankPerWindow = Sys.getenv("PREVAL_RANKPERWINDOW", "1") != "0", rankingsFromTag = envChr("PREVAL_RANKFROM", ""), hyperOverride = envChr("PREVAL_HYPER", ""),
     startYear = startYear, endYear = endYear, minTrainYears = minTrain, valYears = valYears, horizons = horizons,
     complexityLevels = envChr("PREVAL_COMPLEXITY", "2,5,10,15,25,35,50,Inf"),
     epoch = envNum("PREVAL_EPOCHS", 100), earlyStopPatience = envNum("PREVAL_PATIENCE", 15), nReplicates = envNum("PREVAL_REPLICATES", 1),
     useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", onlyMissing = Sys.getenv("PREVAL_ONLY_MISSING") == "1",
     runSlice = sliceTask, torchThreads = envNum("PREVAL_THREADS", 1),
     rankingFile = if (nzchar(ladder)) sprintf("featureTable_%s.csv", ladder) else "featureTable.csv", ladderTag = ladder, runTag = runTag, planRegimes = envChr("PREVAL_PLANREGIMES", ""), baseRunTag = envChr("PREVAL_BASETAG", ""),
-    minTrainFraction = envNum("PREVAL_MINTRAINFRAC", 0.5), minTrain = envNum("PREVAL_MINTRAIN_CASES", 200)))))
+    minTrainFraction = envNum("PREVAL_MINTRAINFRAC", 0.5), minTrain = envNum("PREVAL_MINTRAIN_CASES", 200),
+    arm = envChr("PREVAL_ARM", "main")))))      # PREVAL_ARM=spatialTest (run with PREVAL_TAG=spatialTest): test cases in blocks no regime sees; adds the PreVal + spatial-block regime
 }

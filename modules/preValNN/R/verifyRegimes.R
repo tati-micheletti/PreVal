@@ -85,7 +85,7 @@ verifyRegimeManifest <- function(idx, manifest, regime, s, e, testYear, expected
   if (!all(yr[te] == testYear)) stop("Test cases outside the forecast year")
   tv <- c(tr, va)
   switch(regime,
-    FutureUnseen = if (!(all(yr[tr] >= s & yr[tr] <= e - valYears) && all(yr[va] > e - valYears & yr[va] <= e))) stop("FutureUnseen year rules violated"),
+    FutureUnseen = , FutureUnseenSpatial = if (!(all(yr[tr] >= s & yr[tr] <= e - valYears) && all(yr[va] > e - valYears & yr[va] <= e))) stop(regime, " year rules violated"),
     FutureTainted = , FutureTaintedGrouped = , FutureTaintedSpatial = if (!all(yr[tv] >= s & yr[tv] <= e)) stop(regime, " year rules violated"),
     Internal = if (!all(yr[tv] >= s & yr[tv] <= testYear)) stop("Internal year rules violated"),
     stop("Unknown regime: ", regime))

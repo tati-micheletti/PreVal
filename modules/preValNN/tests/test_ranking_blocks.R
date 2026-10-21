@@ -44,4 +44,25 @@ pr <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = NA, grid = g, seed
 check(is.na(pr$validationYear) && pr$nVal == floor(0.2 * nrow(tab)) && is.finite(pr$table$valLoss[1]), "pilot (random mode) uses a random 20% of all years and returns a finite validation loss")
 pf <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = 2009, grid = g, seed = 1L, epochs = 15L, mode = "forward")
 check(pf$validationYear == 2009 && pf$nTrain == sum(tab$year < 2009), "pilot (forward mode) trains before and validates on the last pre-test year")
+# per-window ranking (2026-10-21): only the years given to rankYears are used; a covariate informative only LATER does not rank on earlier years
+set.seed(21); n2 <- 6000
+t2 <- data.table(SITE_ID = sprintf("w%04d", 1:n2), year = sample(2005:2012, n2, TRUE), x = runif(n2, 4e6, 4.5e6), y = runif(n2, 2.7e6, 3.2e6))
+t2[, `:=`(early = rnorm(n2), late = rnorm(n2), n1 = rnorm(n2), n2 = rnorm(n2))]
+t2[, count := rnbinom(n2, mu = exp(0.5 + ifelse(year <= 2008, 1.0 * early, 1.0 * late)), size = 3)]
+st2 <- buildCaseStore(t2, buildCaseIndex(t2), c("n1", "early", "late", "n2"), "count")
+rkE <- rankCovariates(st2, c("n1", "early", "late", "n2"), adapterCount(), hyper, seed = 5L, mode = "random", rankYears = 2005:2008, nRep = 3L)
+rkL <- rankCovariates(st2, c("n1", "early", "late", "n2"), adapterCount(), hyper, seed = 5L, mode = "random", rankYears = 2009:2012, nRep = 3L)
+check(rkE$Feature[1] == "early" && rkL$Feature[1] == "late", "ranking on the years given only: the covariate informative in those years comes first (early on 2005-2008, late on 2009-2012)")
+check(attr(rkE, "nTrain") + attr(rkE, "nHeldOut") <= sum(t2$year <= 2008) && attr(rkL, "nTrain") + attr(rkL, "nHeldOut") <= sum(t2$year >= 2009), "no case outside the ranking years is used (training + held-out cases fit inside those years)")
+# balanced pilot (2026-10-21): the SAME configurations judged under the random hold-out and two forward geometries; the mean decides; a failing configuration is reported, not hidden
+g3 <- c(g, list(list(hidden = c(8, 4), embDim = 0L, idIntercept = FALSE, idDecay = 0, weightDecay = 0, dropout = 0.1, lr = 0.01, batchSize = 128L)))   # dropout > 0 must now work
+pb <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = NA, grid = g3, seed = 1L, epochs = 15L, mode = "balanced", gaps = c(1L, 3L))
+check(setequal(pb$geometries, c("random", "forward_gap1", "forward_gap3")) && all(c("valLoss_random", "valLoss_forward_gap1", "valLoss_forward_gap3") %in% names(pb$table)),
+      "balanced pilot: configurations are judged under the random and the two forward geometries")
+check(all(is.finite(pb$table$valLoss)) && all(abs(pb$table$valLoss - rowMeans(pb$table[, .(valLoss_random, valLoss_forward_gap1, valLoss_forward_gap3)])) < 1e-9),
+      "balanced pilot: the decisive loss is the mean over the geometries, and the dropout configuration produced a finite loss")
+check(pb$validationYear == max(tab$year), "balanced pilot: the forward geometries validate on the last year")
+pp <- pilotNetwork(st, feats, adapterCount(), lastPilotYear = 2009, grid = g, seed = 1L, epochs = 12L, mode = "balanced")
+check(pp$validationYear == 2009 && setequal(pp$geometries, c("random", "forward_gap1", "forward_gap3")) && pp$nTrain + pp$nVal == sum(tab$year <= 2009),
+      "balanced pilot with lastPilotYear: every geometry stays inside the years up to it (validation on that year, gaps 1 and 3)")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

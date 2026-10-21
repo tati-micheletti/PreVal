@@ -19,6 +19,10 @@ for f in "${OUTROOT}/${PREVAL_SPECIES}/run${TAG}/experimentPlan.csv" "${OUTROOT}
          "${OUTROOT}/${PREVAL_SPECIES}/featureTable.csv" "${FINAL}/final_${PREVAL_SPECIES}.rds"; do
   [ -f "$f" ] || { echo "MISSING: $f  (upload the local outputs/birds/${PREVAL_SPECIES} folder and the final table first)"; exit 1; }
 done
+# per-window covariate rankings (made locally on PreVal's training years only; the train tasks stop without them)
+NRANK=$(ls "${OUTROOT}/${PREVAL_SPECIES}/run${TAG}/rankings"/s*_e*.csv 2>/dev/null | wc -l)
+[ "${NRANK}" -gt 0 ] || { echo "MISSING: no per-window rankings in ${OUTROOT}/${PREVAL_SPECIES}/run${TAG}/rankings (run the local rank stage and upload them)"; exit 1; }
+echo "per-window rankings found: ${NRANK}"
 mkdir -p "/work/${USER}/preval/logs"
 PART=(); if [ -n "${EVE_PARTITION:-}" ]; then PART=(--partition="${EVE_PARTITION}"); fi
 
