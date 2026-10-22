@@ -13,7 +13,10 @@
 #' EQUAL TRAINING SIZE: every regime's training set is randomly subsampled to the smallest training pool among the first four
 #' regimes (in practice the spatial-block one, which loses its buffer). Splits where that leaves less than `minTrainFraction`
 #' of the status-quo training pool are skipped, so the contrast is not confounded by how much data a regime keeps.
-REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial", "Internal")
+#'  * FutureUnseenSpatial (PreVal + spatial blocks, added 2026-10-21): validation = the validation-year cases inside the SAME blocks as the spatial regime
+#'    (later AND in places the training never saw); training = PreVal's training years outside those blocks and their buffer. Its validation set is SMALLER by
+#'    design (about 6-20% of PreVal's), and its training pool is 70-89% of the status-quo pool, which sets the common training size of every regime.
+REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial", "FutureUnseenSpatial", "Internal")
 
 # whole groups (units or blocks) in random order until `nVal` cases are reached; the last group is trimmed at random
 .pickGroups <- function(poolRows, groupOf, nVal, seed) {
@@ -37,7 +40,7 @@ REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTai
 #' @param regimes subset of REGIMES to build (FutureUnseen is always built)
 buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFraction = 0.5,
                               minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8,
-                              regimes = REGIMES, valYears = 1L) {
+                              regimes = REGIMES, valYears = 1L, minValCombined = 10L) {      # production passes 50 (preValNN parameter minValCombined)
   stopifnot(s <= e - valYears, e < testYear, valYears >= 1L)
   yr <- idx$year
   tp <- which(yr == testYear)
@@ -59,12 +62,18 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
     if (is.null(pk)) return(list(ok = FALSE, reason = "validation size larger than the pool (grouped)"))
     pools$FutureTaintedGrouped <- list(train = U[!idx$unit[U] %in% pk$groups], val = pk$valRows)
   }
-  if ("FutureTaintedSpatial" %in% regimes) {
-    if (is.null(spatial)) stop("the spatial regime needs `spatial` (assignBlocks)")
-    pk <- .pickGroups(U, spatial$key, nVal, seed + 20L)
-    if (is.null(pk)) return(list(ok = FALSE, reason = "validation size larger than the pool (spatial)"))
-    zone <- blockZone(idx, pk$groups, spatial)
-    pools$FutureTaintedSpatial <- list(train = U[!zone[U]], val = pk$valRows, nBuffered = sum(zone[U]) - length(pk$valRows))
+  pkS <- NULL
+  if (any(c("FutureTaintedSpatial", "FutureUnseenSpatial") %in% regimes)) {
+    if (is.null(spatial)) stop("the spatial regimes need `spatial` (assignBlocks)")
+    pkS <- .pickGroups(U, spatial$key, nVal, seed + 20L)                 # the SAME validation blocks for the spatial regime and the PreVal + spatial regime
+    if (is.null(pkS)) return(list(ok = FALSE, reason = "validation size larger than the pool (spatial)"))
+    zone <- blockZone(idx, pkS$groups, spatial)
+    if ("FutureTaintedSpatial" %in% regimes) pools$FutureTaintedSpatial <- list(train = U[!zone[U]], val = pkS$valRows, nBuffered = sum(zone[U]) - length(pkS$valRows))
+    if ("FutureUnseenSpatial" %in% regimes) {
+      valC <- valP[spatial$key[valP] %in% pkS$groups]
+      if (length(valC) < minValCombined) return(list(ok = FALSE, reason = sprintf("PreVal + spatial validation too small (%d cases)", length(valC))))
+      pools$FutureUnseenSpatial <- list(train = trainP[!zone[trainP]], val = valC)
+    }
   }
 
   poolSizes <- vapply(pools, function(p) length(p$train), numeric(1))
@@ -88,10 +97,11 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
     draw <- withSeed(seed + 3L, sample(intPool, nEq + nVal))
     splits$Internal <- mk(draw[(nVal + 1L):length(draw)], draw[seq_len(nVal)])
   }
-  list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = splits[intersect(regimes, names(splits))],
-       sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)), trainShare = nEq / poolSizes[["FutureTainted"]],
-       poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
-       spatialValBlocks = if (!is.null(pools$FutureTaintedSpatial)) unique(spatial$key[pools$FutureTaintedSpatial$val]) else NULL)
+  sp2 <- splits[intersect(regimes, names(splits))]
+  list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = sp2,
+       sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)), valSizes = vapply(sp2, function(m) sum(m$set == "val"), numeric(1)),
+       trainShare = nEq / poolSizes[["FutureTainted"]], poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
+       spatialValBlocks = if (!is.null(pkS)) pkS$groups else NULL)
 }
 
 #' Per-set composition (cases, units, year range) for the audit trail.

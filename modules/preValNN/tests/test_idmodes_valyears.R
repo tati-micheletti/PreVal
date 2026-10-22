@@ -15,20 +15,20 @@ tab[, count := rnbinom(.N, mu = exp(0.5 + 0.4 * a + u), size = 3)]     # u = a r
 idx <- buildCaseIndex(tab); sp <- assignBlocks(idx, 100, 10, 4L, 1L)
 
 # ---- two-year validation ----
-b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp, valYears = 2L)
+b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp, minTrainFraction = 0.5, valYears = 2L)
 check(isTRUE(b$ok), "valYears = 2 split builds")
 u <- b$splits$FutureUnseen; yr <- idx$year
 check(all(yr[u[set == "val"]$row] %in% c(2011, 2012)) && all(yr[u[set == "train"]$row] <= 2010), "PreVal: validation = the last two years, training before them")
 check(all(verifyRegimeSplits(idx, b, 2007, 2012, 2013, "v2", sp, valYears = 2L)$ok), "gates pass with two validation years")
 check(inherits(try(verifyRegimeSplits(idx, b, 2007, 2012, 2013, "v2bad", sp, valYears = 1L), silent = TRUE), "try-error"), "gates stop if the split is checked as one-year validation (rule is enforced)")
-pl <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 2, horizons = 1:2, covariateLevels = 2, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50)
+pl <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 2, horizons = 1:2, covariateLevels = 2, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50, minTrainFraction = 0.5)
 check(all(pl$plan$historyEnd - pl$plan$windowStart + 1L >= 4L) && all(pl$plan$valYears == 2L), "plan: every window has at least 2 training + 2 validation years")
 md <- file.path(tempdir(), "mv2"); writeManifests(pl$bundles, md)
 check(all(auditManifests(idx, pl$plan, md, pl$spatial)$ok), "audit of two-year-validation manifests passes")
-pl1 <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1, covariateLevels = 2, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50)
+pl1 <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1, covariateLevels = 2, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50, minTrainFraction = 0.5)
 check(min(pl1$plan$historyEnd - pl1$plan$windowStart + 1L) == 3L, "valYears = 1 with 2 training years gives windows of at least 3 years")
 
-plF <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1:3, covariateLevels = 2, firstForecastYear = 2010, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50)
+plF <- generatePlan(idx, 2005, 2018, minTrainYears = 2, valYears = 1, horizons = 1:3, covariateLevels = 2, firstForecastYear = 2010, blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50, minTrainFraction = 0.5)
 check(min(plF$plan$testYear) >= 2010, "firstForecastYear: no split forecasts a year in the pilot's pre-test history")
 
 # ---- route-information modes ----
@@ -37,7 +37,7 @@ runMode <- function(mode, regime, seed = 3L) {
   h <- hyper
   if (mode == "intercept") { h$idIntercept <- TRUE; h$idDecay <- 1e-3 }
   if (mode == "concat") h$embDim <- 8L
-  b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp)
+  b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp, minTrainFraction = 0.5)
   m <- b$splits[[regime]]
   st <- buildCaseStore(tab, idx, c("a", "n1"), "count")
   od <- file.path(tempdir(), paste0("od_", mode, "_", regime)); dir.create(od, showWarnings = FALSE)
@@ -55,7 +55,7 @@ check(r0$valLossBest - r1$valLossBest > g0$valLossBest - g1$valLossBest + 0.03, 
 # the intercept is shrunk: with a very strong penalty it collapses to the no-ID model
 h <- hyper; h$idIntercept <- TRUE; h$idDecay <- 5
 st <- buildCaseStore(tab, idx, c("a", "n1"), "count")
-b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp); m <- b$splits$FutureTainted
+b <- buildRegimeSplits(minTest = 50L, minVal = 50L, minTrain = 100L, idx, s = 2007, e = 2012, testYear = 2013, seed = 5L, spatial = sp, minTrainFraction = 0.5); m <- b$splits$FutureTainted
 tr <- storeSlice(st, m$row[m$set == "train"], c("a", "n1")); va <- storeSlice(st, m$row[m$set == "val"], c("a", "n1"))
 fit <- fitNet(getAdapter("count"), h, tr, va, st$nUnits, seed = 3L)
 check(max(abs(as.matrix(fit$net$idInt$weight$detach()))) < 0.25, sprintf("a strong penalty shrinks the route intercepts toward zero (max |intercept| %.3f)", max(abs(as.matrix(fit$net$idInt$weight$detach())))))

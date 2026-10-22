@@ -40,13 +40,14 @@ defineModule(sim, list(
     defineParameter("minTrain", "numeric", 200, 10, NA, "Minimum training cases of a split."),
     defineParameter("minVal", "numeric", 100, 10, NA, "Minimum validation cases of a split."),
     defineParameter("minTest", "numeric", 100, 10, NA, "Minimum test cases of a split."),
+    defineParameter("minValCombined", "numeric", 50, 5, NA, "Minimum validation cases of the PreVal + spatial regime (last-year cases inside the held-out blocks); splits below it are skipped."),
     defineParameter("minTrainFraction", "numeric", 0.5, 0, 1, "Sanity limit: skip splits where blocking leaves less than this share of the status-quo training pool (the share is stored per split)."),
     defineParameter("rankingFile", "character", "featureTable.csv", NA, NA, "Ranking (ladder) file from preValNN_Global; e.g. featureTable_forward.csv for the sensitivity ladder."),
     defineParameter("ladderTag", "character", "", NA, NA, "Suffix for the output folders of a sensitivity run (e.g. 'forward'); empty = primary."),
     defineParameter("epoch", "numeric", 100, 1, 1000, "Maximum epochs per model (best validation epoch is kept)."),
     defineParameter("earlyStopPatience", "numeric", 15, 1, Inf, "Stop after this many epochs without a new best validation loss."),
     defineParameter("zClip", "numeric", 10, 1, Inf, "Standardised covariates are clipped to +/- zClip."),
-    defineParameter("regimes", "character", "FutureUnseen,FutureTainted,FutureTaintedSpatial,Internal", NA, NA, "Regimes to build (route-grouped CV was dropped on 2026-10-21; the main greenfinch and woodpecker runs still contain it)."),
+    defineParameter("regimes", "character", "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", NA, NA, "Regimes to build (route-grouped CV was dropped on 2026-10-21; the first greenfinch and woodpecker runs still contain it). FutureUnseenSpatial = PreVal + spatial blocks, added 2026-10-21."),
     defineParameter("runSlice", "numeric", NA_real_, NA, NA, "c(taskId, nTasks) to run a share of the models in this process (SLURM array). NA runs everything."),
     defineParameter("torchThreads", "numeric", 1, 1, NA, "Threads per process for torch."),
     defineParameter("stopOnError", "logical", TRUE, NA, NA, "Raise an error after the run if any model failed."),
@@ -105,7 +106,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
                             firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
-                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare)
+                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare, minValCombined = P(sim)$minValCombined)
         lp <- sim$networkSettings$lastPilotYear   # strict (forward) pilot only: it must never have seen a forecast year
         if (!is.null(lp) && !is.na(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)

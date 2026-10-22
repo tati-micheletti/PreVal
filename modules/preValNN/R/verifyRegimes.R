@@ -20,11 +20,22 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
   add("L2 test set identical across regimes", all(vapply(tests, function(t) identical(sort(t), sort(tests[[1]])), logical(1))))
   add("L2 test set lies entirely in the forecast year", all(yr[tests[[1]]] == testYear))
   sz <- vapply(sp, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")), numeric(3))
-  add("L3 equal train/val/test sizes across regimes", all(apply(sz, 1, function(v) length(unique(v)) == 1)),
+  eqRg <- setdiff(colnames(sz), "FutureUnseenSpatial")      # the PreVal + spatial validation set is smaller by design (only the validation-year cases inside the held-out blocks)
+  add("L3 equal train/val/test sizes across regimes (training and test in ALL regimes; validation in all but PreVal + spatial)",
+      all(apply(sz[, eqRg, drop = FALSE], 1, function(v) length(unique(v)) == 1)) && length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1,
       paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
   u <- sp$FutureUnseen
   add("L4 FutureUnseen train years in [s, e-v]", all(yr[rowsOf(u, "train")] >= s & yr[rowsOf(u, "train")] <= e - valYears))
   add("L4 FutureUnseen validation = the last v years only", all(yr[rowsOf(u, "val")] > e - valYears & yr[rowsOf(u, "val")] <= e))
+  if ("FutureUnseenSpatial" %in% names(sp)) {
+    cm <- sp$FutureUnseenSpatial
+    add("L4 PreVal + spatial: train years in [s, e-v], validation years in (e-v, e]", all(yr[rowsOf(cm, "train")] >= s & yr[rowsOf(cm, "train")] <= e - valYears) && all(yr[rowsOf(cm, "val")] > e - valYears & yr[rowsOf(cm, "val")] <= e))
+    if (!is.null(bundle$spatialValBlocks)) {
+      if (is.null(spatial)) stop("verifyRegimeSplits: spatial regime present but no spatial blocks given")
+      add("L8 PreVal + spatial: validation cases lie in the spatial regime's validation blocks", all(spatial$key[rowsOf(cm, "val")] %in% bundle$spatialValBlocks))
+      add("L8 PreVal + spatial: no training case in a validation block or its buffer", !any(blockZone(idx, bundle$spatialValBlocks, spatial)[rowsOf(cm, "train")]))
+    }
+  }
   Upool <- which(yr >= s & yr <= e)
   U <- Upool
   for (rg in intersect(c("FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial"), names(sp))) {

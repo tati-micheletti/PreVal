@@ -215,7 +215,9 @@ compareRefit <- function(mainDir, refitDir, outDir = NULL) {
   w <- merge(data.table::dcast(A, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = lc),
              data.table::dcast(B, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = lc), by = key)
   prs <- list(c("FutureUnseenRefit", "FutureTaintedRefit", "PreVal-refit minus status-quo-refit"), c("FutureUnseenRefit", "FutureTainted", "PreVal-refit minus status quo (plain)"),
-              c("FutureUnseenRefit", "FutureUnseen", "effect of refitting PreVal"), c("FutureTaintedRefit", "FutureTainted", "effect of refitting the status quo"))
+              c("FutureUnseenRefit", "FutureUnseen", "effect of refitting PreVal"), c("FutureTaintedRefit", "FutureTainted", "effect of refitting the status quo"),
+              c("FutureUnseenSpatialRefit", "FutureUnseenSpatial", "effect of refitting PreVal + spatial"), c("FutureUnseenSpatialRefit", "FutureUnseenRefit", "PreVal + spatial refit minus PreVal refit"),
+              c("FutureUnseenSpatialRefit", "FutureTaintedRefit", "PreVal + spatial refit minus status-quo refit"))
   w[, bin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]
   res <- list()
   for (p in prs) if (all(p[1:2] %in% names(w))) {
