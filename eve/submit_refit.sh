@@ -14,7 +14,8 @@ PART=(); if [ -n "${EVE_PARTITION:-}" ]; then PART=(--partition="${EVE_PARTITION
 
 # The PREVAL_* settings typed in front of this command did NOT reach the batch jobs on EVE (2026-10-08: the second pass
 # silently ran the first-pass settings). Write them to a file and pass its PATH explicitly; eve_env.sh sources it.
-RUNENV="/work/${USER}/preval/run_env_$(date +%Y%m%d_%H%M%S).sh"
+RUNENV="/work/${USER}/preval/run_env_${PREVAL_DATASET:-caribou}${PREVAL_TAG:+_${PREVAL_TAG}}_$(date +%Y%m%d_%H%M%S)_$$.sh"   # unique per submission (the same-second collision of 2026-10-24)
+[ -e "${RUNENV}" ] && { echo "settings file ${RUNENV} already exists; refusing to overwrite it"; exit 1; }
 env | grep '^PREVAL_' | sed "s/^\([^=]*\)=\(.*\)\$/export \1='\2'/" > "${RUNENV}" || true
 echo "Settings handed to every job (${RUNENV}):"; sed 's/^/  /' "${RUNENV}"; [ -s "${RUNENV}" ] || echo "  (none: defaults = first-pass settings)"
 EXPORT="--export=ALL,PREVAL_RUN_ENV=${RUNENV}"
