@@ -1,4 +1,5 @@
 # Post-analysis of the corrected birds experiment, run on EVE next to the results (one species per call; parts chosen by PREVAL_POST):
+#   routes          PreVal on UNSEEN ROUTES (regime FutureUnseenGrouped) against the other regimes of the same-places and new-places runs
 #   arms            cross-arm comparisons from the analysis folders: refit against the main run, two-year validation against one year, route information off against on (matched splits)
 #   nov:<runfolder> covariate-novelty (DI) analysis of the plan (amendments 27 and 29) for one run folder, e.g. nov:run (same places) or nov:run_spatialTest (new places)
 # Settings: PREVAL_SPECIES, PREVAL_OUT (default outputs/birds_v4), PREVAL_FINAL (default data_birds/v2), PREVAL_POST (default all parts).
@@ -25,6 +26,13 @@ if ("arms" %in% parts) {
   if (file.exists(file.path(rd, "allModels.csv"))) { r <- compareRefit(A, rd, file.path(ex, "refit")); logf("refit comparison:", nrow(r), "rows") } else logf("NOTE: no refit analysis found")
   for (arm in c("val2", "none")) { d <- file.path(root, paste0("run_", arm), "analysis")
     if (file.exists(file.path(d, "pairedContrasts_perSplit.csv"))) { r <- compareValidationArms(A, d, file.path(ex, arm), contrasts = cons); logf(arm, "against the main run:", nrow(r), "contrasts") } else logf("NOTE: no analysis for", arm) }
+}
+
+if ("routes" %in% parts) {          # PreVal on UNSEEN ROUTES (regime FutureUnseenGrouped, trained in run_routes / run_routesNew) against the regimes of the same-places / new-places runs
+  for (pr in list(c("run_routes", "run", "routes_samePlaces"), c("run_routesNew", "run_spatialTest", "routes_newPlaces"))) {
+    a <- file.path(root, pr[1], "analysis"); b <- file.path(root, pr[2], "analysis")
+    if (file.exists(file.path(a, "allModels.csv"))) { r <- compareAddedRegime(b, a, file.path(ex, pr[3])); logf("unseen routes", pr[3], ":", nrow(r), "rows") } else logf("NOTE: no analysis found for", pr[1])
+  }
 }
 
 for (p in grep("^nov:", parts, value = TRUE)) {

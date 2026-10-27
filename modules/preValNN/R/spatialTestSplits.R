@@ -16,7 +16,7 @@
 SPATIALTEST_REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedSpatial", "FutureUnseenSpatial")
 
 buildSpatialTestSplits <- function(idx, s, e, testYear, seed, spatial, testShare = 0.25, valShare = 0.25, minTrain = 200L, minVal = 50L, minTest = 100L,
-                                   minTrainFraction = 0.5, valYears = 1L) {
+                                   minTrainFraction = 0.5, valYears = 1L, withRouteHeldOut = FALSE) {
   stopifnot(s <= e - valYears, e < testYear, valYears >= 1L, !is.null(spatial))
   yr <- idx$year; tp <- which(yr == testYear)
   nTestTarget <- floor(testShare * length(tp))
@@ -34,6 +34,10 @@ buildSpatialTestSplits <- function(idx, s, e, testYear, seed, spatial, testShare
   z <- blockZone(idx, pk$groups, spatial); pools$FutureTaintedSpatial <- list(train = U[!z[U]], val = pk$valRows)
   pc <- .pickGroups(valP, spatial$key, m, seed + 40L); if (is.null(pc)) return(list(ok = FALSE, reason = "validation size larger than the validation years (combined)"))
   z2 <- blockZone(idx, pc$groups, spatial); pools$FutureUnseenSpatial <- list(train = trainP[!z2[trainP]], val = pc$valRows)
+  if (withRouteHeldOut) {          # PreVal on unseen routes (added 2026-10-27): validation = last-year cases of m whole routes, those routes absent from training in every year, no spatial buffer
+    pg <- .pickGroups(valP, idx$unit, m, seed + 50L); if (is.null(pg)) return(list(ok = FALSE, reason = "validation size larger than the validation years (unseen routes)"))
+    pools$FutureUnseenGrouped <- list(train = trainP[!idx$unit[trainP] %in% pg$groups], val = pg$valRows)
+  }
   poolSizes <- vapply(pools, function(p) length(p$train), numeric(1)); nEq <- min(poolSizes)
   if (nEq < minTrain) return(list(ok = FALSE, reason = sprintf("training too small after blocking (%d)", nEq)))
   if (nEq < minTrainFraction * poolSizes[["FutureTainted"]]) return(list(ok = FALSE, reason = sprintf("blocking leaves only %d of %d status-quo training cases", nEq, poolSizes[["FutureTainted"]])))
@@ -43,7 +47,7 @@ buildSpatialTestSplits <- function(idx, s, e, testYear, seed, spatial, testShare
   for (k in seq_along(pools)) { nm <- names(pools)[k]; p <- pools[[nm]]
     tr <- if (length(p$train) > nEq) p$train[withSeed(seed + 30L + k, sample.int(length(p$train), nEq))] else p$train
     splits[[nm]] <- mk(tr, p$val) }
-  list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = splits[SPATIALTEST_REGIMES], sizes = c(nTrain = nEq, nVal = m, nTest = length(test)),
+  list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = splits[c(SPATIALTEST_REGIMES, if (withRouteHeldOut) "FutureUnseenGrouped")], sizes = c(nTrain = nEq, nVal = m, nTest = length(test)),
        trainShare = nEq / poolSizes[["FutureTainted"]], poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
        spatialValBlocks = pk$groups, combinedValBlocks = pc$groups, testBlocks = pt$groups, arm = "spatialTest")
 }
@@ -65,7 +69,8 @@ verifySpatialTestSplits <- function(idx, bundle, s, e, testYear, splitId, spatia
   add("T2 equal train/val/test sizes across regimes", all(apply(sz, 1, function(v) length(unique(v)) == 1)), paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
   testZone <- blockZone(idx, unique(spatial$key[tests[[1]]]), spatial)
   for (rg in names(sp)) add(sprintf("T3 %s: no training/validation case in the test blocks or their buffer", rg), !any(testZone[c(rowsOf(sp[[rg]], "train"), rowsOf(sp[[rg]], "val"))]))
-  for (rg in intersect(c("FutureUnseen", "FutureUnseenSpatial"), names(sp))) {
+  if ("FutureUnseenGrouped" %in% names(sp)) add("T7 PreVal on unseen routes: no route of the validation set appears in training (in any year)", !length(intersect(idx$unit[rowsOf(sp$FutureUnseenGrouped, "train")], idx$unit[rowsOf(sp$FutureUnseenGrouped, "val")])))
+  for (rg in intersect(c("FutureUnseen", "FutureUnseenSpatial", "FutureUnseenGrouped"), names(sp))) {
     add(sprintf("T4 %s: train years in [s, e-v], validation years in (e-v, e]", rg),
         all(yr[rowsOf(sp[[rg]], "train")] >= s & yr[rowsOf(sp[[rg]], "train")] <= e - valYears) && all(yr[rowsOf(sp[[rg]], "val")] > e - valYears & yr[rowsOf(sp[[rg]], "val")] <= e))
   }

@@ -4,8 +4,9 @@
 #' the weighted-Euclidean distance (in the standardised covariates of the level, weighted by the window's permutation importance) from the test case to its nearest
 #' REFERENCE case, divided by the mean nearest-neighbour distance among reference cases. The reference set is PreVal's TRAINING cases of that split (its manifest), so a test
 #' case has ONE novelty value that does not depend on the regime. Per-case losses are the calibrated ones (lossCal).
-NOVELTY_LABELS <- c(FutureUnseen = "PreVal", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial")
-NOVELTY_PAIRS <- list(c("PreVal", "StatusQuo"), c("Spatial", "StatusQuo"), c("PreValSpatial", "PreVal"), c("PreValSpatial", "Spatial"), c("PreValSpatial", "StatusQuo"))
+NOVELTY_LABELS <- c(FutureUnseen = "PreVal", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial", FutureUnseenGrouped = "PreValRoutes")
+NOVELTY_PAIRS <- list(c("PreVal", "StatusQuo"), c("Spatial", "StatusQuo"), c("PreValSpatial", "PreVal"), c("PreValSpatial", "Spatial"), c("PreValSpatial", "StatusQuo"),
+                      c("PreValRoutes", "PreVal"), c("PreValRoutes", "StatusQuo"), c("PreValRoutes", "Spatial"), c("PreValSpatial", "PreValRoutes"))
 
 #' @param Zref,Ztest standardised and importance-weighted covariate matrices (reference cases, test cases)
 #' @param nSample number of reference cases (random, seeded) used to estimate the mean nearest-neighbour distance among reference cases (leave-one-out)

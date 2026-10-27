@@ -73,7 +73,10 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, exc
   contrast("P6_Combined_minus_PreVal", "FutureUnseenSpatial", "FutureUnseen")
   contrast("P6_Combined_minus_Spatial", "FutureUnseenSpatial", "FutureTaintedSpatial")
   contrast("P6_Combined_minus_Tainted", "FutureUnseenSpatial", "FutureTainted")
-  cn <- grep("^(H1|H2|P3|P4|P6)_", names(W), value = TRUE)
+  # PreVal on unseen routes (validation routes absent from training in every year)
+  contrast("P7_PreValRoutes_minus_PreVal", "FutureUnseenGrouped", "FutureUnseen"); contrast("P7_PreValRoutes_minus_Tainted", "FutureUnseenGrouped", "FutureTainted")
+  contrast("P7_PreValRoutes_minus_Spatial", "FutureUnseenGrouped", "FutureTaintedSpatial"); contrast("P7_PreValRoutes_minus_Combined", "FutureUnseenGrouped", "FutureUnseenSpatial")
+  cn <- grep("^(H1|H2|P3|P4|P6|P7)_", names(W), value = TRUE)
   data.table::fwrite(W, file.path(outDir, "pairedContrasts_perSplit.csv"))
   if (!length(cn)) { message("analyzeRegimes: none of the standard regime contrasts is available in this run; writing the model table only."); return(invisible(out)) }
   Wl <- data.table::melt(W, id.vars = id, measure.vars = cn, variable.name = "contrast", value.name = "diff")
@@ -227,5 +230,26 @@ compareRefit <- function(mainDir, refitDir, outDir = NULL) {
   }
   out <- data.table::rbindlist(res)
   if (!is.null(outDir)) { dir.create(outDir, recursive = TRUE, showWarnings = FALSE); data.table::fwrite(out, file.path(outDir, "refit_vs_main.csv")) }
+  out[]
+}
+
+#' A regime that was trained in a SEPARATE run folder (same splits, seeds, test sets and common training size) against the regimes of the base run, e.g. FutureUnseenGrouped
+#' (PreVal on unseen routes) from run_routes against run. Paired on identical test cases; the forecast year is the unit. Negative = the added regime forecasts better.
+#' @param baseDir,addDir analysis folders (allModels.csv with `realized` and `reported`) of the base run and of the run that holds the added regime
+compareAddedRegime <- function(baseDir, addDir, outDir = NULL, regime = "FutureUnseenGrouped", against = c("FutureUnseen", "FutureTainted", "FutureTaintedSpatial", "FutureUnseenSpatial")) {
+  A <- data.table::fread(file.path(baseDir, "allModels.csv")); B <- data.table::fread(file.path(addDir, "allModels.csv"))[typeValidation == regime]
+  key <- c("splitId", "complexity", "replicate", "testYear", "horizon")
+  w <- merge(data.table::dcast(A, splitId + complexity + replicate + testYear + horizon ~ typeValidation, value.var = "realized"), B[, c(key, "realized"), with = FALSE], by = key)
+  data.table::setnames(w, "realized", "added"); w[, bin := cut(horizon, c(0, 1, 2, 4, 9, Inf), labels = c("1", "2", "3-4", "5-9", "10+"))]
+  res <- list()
+  for (rg in intersect(against, names(w))) {
+    w[, d := added - get(rg)]; nm <- paste(regime, "minus", rg)
+    y <- w[, .(v = mean(d)), by = testYear]; res[[length(res) + 1L]] <- cbind(contrast = nm, scope = "all", .yearTest(y$v))
+    for (b in levels(w$bin)) { y <- w[bin == b, .(v = mean(d)), by = testYear]; if (nrow(y) >= 3) res[[length(res) + 1L]] <- cbind(contrast = nm, scope = paste0("horizon ", b), .yearTest(y$v)) }
+    for (k in sort(unique(w$complexity))) { y <- w[complexity == k, .(v = mean(d)), by = testYear]; res[[length(res) + 1L]] <- cbind(contrast = nm, scope = paste0("covariates ", k), .yearTest(y$v)) }
+  }
+  out <- data.table::rbindlist(res)
+  ob <- B[, .(v = mean(realized - reported)), by = testYear]; out <- data.table::rbindlist(list(out, cbind(contrast = paste(regime, "optimism (realized minus reported)"), scope = "all", .yearTest(ob$v))), fill = TRUE)
+  if (!is.null(outDir)) { dir.create(outDir, recursive = TRUE, showWarnings = FALSE); data.table::fwrite(out, file.path(outDir, paste0("added_regime_", regime, ".csv"))) }
   out[]
 }

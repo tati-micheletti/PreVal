@@ -19,8 +19,12 @@ check(setequal(names(b$splits), REGIMES), "all six regimes are present (includin
 v <- verifyRegimeSplits(idx, b, 2008, 2014, 2015, "t1", sp)
 check(all(v$ok), sprintf("all %d gate checks pass on a normal split", nrow(v)))
 sz <- sapply(b$splits, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")))
-check(all(apply(sz[, colnames(sz) != "FutureUnseenSpatial"], 1, function(r) length(unique(r)) == 1)) && length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1,
-      "equal training and test size in all six regimes, equal validation size in all but PreVal + spatial")
+check(all(apply(sz[, !colnames(sz) %in% c("FutureUnseenSpatial", "FutureUnseenGrouped")], 1, function(r) length(unique(r)) == 1)) && length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1,
+      "equal training and test size in all seven regimes, equal validation size in all but PreVal + spatial and PreVal on unseen routes")
+gm <- b$splits$FutureUnseenGrouped; gv <- gm$row[gm$set == "val"]; gt <- gm$row[gm$set == "train"]
+check(length(intersect(idx$unit[gt], idx$unit[gv])) == 0 && all(idx$year[gv] == 2014) && max(idx$year[gt]) <= 2013 && sz[2, "FutureUnseenGrouped"] == sz[2, "FutureUnseenSpatial"],
+      "PreVal on unseen routes: validation = last-year cases of whole routes that are absent from training in EVERY year; same validation size as PreVal + spatial")
+check(sum(b$splits$FutureTainted$set == "train") == sum(gm$set == "train") && sz[1, "FutureUnseenGrouped"] == b$sizes[["nTrain"]], "PreVal on unseen routes trains on the common training size")
 cmb <- b$splits$FutureUnseenSpatial; vv <- cmb$row[cmb$set == "val"]
 check(sz[2, "FutureUnseenSpatial"] < sz[2, "FutureUnseen"] && all(idx$year[vv] == 2014) && all(sp$key[vv] %in% b$spatialValBlocks) && b$valSizes[["FutureUnseenSpatial"]] == sz[2, "FutureUnseenSpatial"],
       "PreVal + spatial: smaller validation set = last-year cases inside the spatial regime's validation blocks")

@@ -20,13 +20,18 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
   add("L2 test set identical across regimes", all(vapply(tests, function(t) identical(sort(t), sort(tests[[1]])), logical(1))))
   add("L2 test set lies entirely in the forecast year", all(yr[tests[[1]]] == testYear))
   sz <- vapply(sp, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")), numeric(3))
-  eqRg <- setdiff(colnames(sz), "FutureUnseenSpatial")      # the PreVal + spatial validation set is smaller by design (only the validation-year cases inside the held-out blocks)
-  add("L3 equal train/val/test sizes across regimes (training and test in ALL regimes; validation in all but PreVal + spatial)",
+  eqRg <- setdiff(colnames(sz), c("FutureUnseenSpatial", "FutureUnseenGrouped"))      # the validation sets of PreVal + spatial and PreVal on unseen routes are smaller by design
+  add("L3 equal train/val/test sizes across regimes (training and test in ALL regimes; validation in all but PreVal + spatial and PreVal on unseen routes)",
       all(apply(sz[, eqRg, drop = FALSE], 1, function(v) length(unique(v)) == 1)) && length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1,
       paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
   u <- sp$FutureUnseen
   add("L4 FutureUnseen train years in [s, e-v]", all(yr[rowsOf(u, "train")] >= s & yr[rowsOf(u, "train")] <= e - valYears))
   add("L4 FutureUnseen validation = the last v years only", all(yr[rowsOf(u, "val")] > e - valYears & yr[rowsOf(u, "val")] <= e))
+  if ("FutureUnseenGrouped" %in% names(sp)) {
+    gm <- sp$FutureUnseenGrouped
+    add("L4 PreVal on unseen routes: train years in [s, e-v], validation years in (e-v, e]", all(yr[rowsOf(gm, "train")] >= s & yr[rowsOf(gm, "train")] <= e - valYears) && all(yr[rowsOf(gm, "val")] > e - valYears & yr[rowsOf(gm, "val")] <= e))
+    add("L7 PreVal on unseen routes: no route of the validation set appears in training (in any year)", !length(intersect(idx$unit[rowsOf(gm, "train")], idx$unit[rowsOf(gm, "val")])))
+  }
   if ("FutureUnseenSpatial" %in% names(sp)) {
     cm <- sp$FutureUnseenSpatial
     add("L4 PreVal + spatial: train years in [s, e-v], validation years in (e-v, e]", all(yr[rowsOf(cm, "train")] >= s & yr[rowsOf(cm, "train")] <= e - valYears) && all(yr[rowsOf(cm, "val")] > e - valYears & yr[rowsOf(cm, "val")] <= e))
@@ -96,10 +101,10 @@ verifyRegimeManifest <- function(idx, manifest, regime, s, e, testYear, expected
   if (!all(yr[te] == testYear)) stop("Test cases outside the forecast year")
   tv <- c(tr, va)
   switch(regime,
-    FutureUnseen = , FutureUnseenSpatial = if (!(all(yr[tr] >= s & yr[tr] <= e - valYears) && all(yr[va] > e - valYears & yr[va] <= e))) stop(regime, " year rules violated"),
+    FutureUnseen = , FutureUnseenSpatial = , FutureUnseenGrouped = if (!(all(yr[tr] >= s & yr[tr] <= e - valYears) && all(yr[va] > e - valYears & yr[va] <= e))) stop(regime, " year rules violated"),
     FutureTainted = , FutureTaintedGrouped = , FutureTaintedSpatial = if (!all(yr[tv] >= s & yr[tv] <= e)) stop(regime, " year rules violated"),
     Internal = if (!all(yr[tv] >= s & yr[tv] <= testYear)) stop("Internal year rules violated"),
     stop("Unknown regime: ", regime))
-  if (regime == "FutureTaintedGrouped" && length(intersect(idx$unit[tr], idx$unit[va]))) stop("Grouped regime: a unit is in train and validation")
+  if (regime %in% c("FutureTaintedGrouped", "FutureUnseenGrouped") && length(intersect(idx$unit[tr], idx$unit[va]))) stop(regime, ": a unit is in train and validation")
   invisible(TRUE)
 }

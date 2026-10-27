@@ -16,7 +16,10 @@
 #'  * FutureUnseenSpatial (PreVal + spatial blocks, added 2026-10-21): validation = the validation-year cases inside the SAME blocks as the spatial regime
 #'    (later AND in places the training never saw); training = PreVal's training years outside those blocks and their buffer. Its validation set is SMALLER by
 #'    design (about 6-20% of PreVal's), and its training pool is 70-89% of the status-quo pool, which sets the common training size of every regime.
-REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial", "FutureUnseenSpatial", "Internal")
+#'  * FutureUnseenGrouped (PreVal on UNSEEN ROUTES, added 2026-10-27): validation = the validation-year cases of a random set of whole routes; those routes are removed from training in EVERY
+#'    year (no spatial buffer, neighbouring routes stay in training). Same principle as validating on an unseen year, applied to routes. Its validation size equals that of PreVal + spatial
+#'    when that regime is built (otherwise 15% of PreVal's).
+REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTaintedSpatial", "FutureUnseenSpatial", "FutureUnseenGrouped", "Internal")
 
 # whole groups (units or blocks) in random order until `nVal` cases are reached; the last group is trimmed at random
 .pickGroups <- function(poolRows, groupOf, nVal, seed) {
@@ -76,6 +79,12 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
     }
   }
 
+  if ("FutureUnseenGrouped" %in% regimes) {
+    mG <- if (!is.null(pools$FutureUnseenSpatial)) length(pools$FutureUnseenSpatial$val) else max(minValCombined, floor(0.15 * nVal))
+    pg <- .pickGroups(valP, idx$unit, mG, seed + 50L)
+    if (is.null(pg)) return(list(ok = FALSE, reason = "validation size larger than the validation years (unseen routes)"))
+    pools$FutureUnseenGrouped <- list(train = trainP[!idx$unit[trainP] %in% pg$groups], val = pg$valRows)      # the held-out routes are absent from training in every year
+  }
   poolSizes <- vapply(pools, function(p) length(p$train), numeric(1))
   nEq <- min(poolSizes)
   if (nEq < minTrain) return(list(ok = FALSE, reason = sprintf("training too small after blocking (%d)", nEq)))

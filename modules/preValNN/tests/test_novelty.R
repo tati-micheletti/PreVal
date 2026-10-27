@@ -42,7 +42,7 @@ one <- cs[splitId == sel[1] & level == 4]; nn <- one[, .(DIs = uniqueN(round(DI,
 check(all(nn$DIs == 1) && one[regime == "PreVal", .N] == one[regime == "StatusQuo", .N] && setequal(one[regime == "PreVal"]$row, one[regime == "Spatial"]$row), "a test case has ONE novelty value and the same test cases appear in every regime")
 st <- noveltyStats(cs)
 check(all(c("DI_summary", "tercile_means", "tercile_contrasts", "slope_on_logDI") %in% names(st)) && all(c("estimate", "lo", "hi", "nYears", "nPositive", "nNegative") %in% names(st$slope_on_logDI)), "statistics tables are produced with the year-level test columns")
-check(setequal(unique(st$tercile_contrasts$contrast), sapply(NOVELTY_PAIRS, function(p) paste(p[1], "minus", p[2]))) && all(st$tercile_means$tercile %in% c("low", "mid", "high")), "all five regime contrasts and the three terciles are reported")
+check(setequal(unique(st$tercile_contrasts$contrast), sapply(Filter(function(p) all(p %in% c("PreVal", "StatusQuo", "Spatial", "PreValSpatial")), NOVELTY_PAIRS), function(p) paste(p[1], "minus", p[2]))) && all(st$tercile_means$tercile %in% c("low", "mid", "high")), "all five regime contrasts and the three terciles are reported")
 # the models' own result files agree with the per-case table (calibrated test loss = mean of the per-case calibrated losses)
 mm <- data.table::rbindlist(lapply(list.files(file.path(runDir, "testedModels"), "_finalDT[.]csv$", full.names = TRUE), data.table::fread, fill = TRUE))
 chk <- merge(mm[numberOfCovariates == 4 & splitId == sel[1], .(regime = NOVELTY_LABELS[typeValidation], testLossCal)], cs[splitId == sel[1] & level == 4, .(m = mean(lossCal)), by = regime], by = "regime")
