@@ -52,6 +52,7 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
     it <- c(rowsOf(sp$Internal, "train"), rowsOf(sp$Internal, "val"))
     add("L6 Internal years in [s, T]", all(yr[it] >= s & yr[it] <= testYear))
     add("L6 Internal contains no test case", !any(it %in% tests[[1]]))
+    if (isTRUE(bundle$matchUnits)) add("L6 Internal (matchUnits): only units present in the pool of years s..e", all(idx$unit[it] %in% idx$unit[Upool]))
   }
   if ("FutureTaintedGrouped" %in% names(sp)) {
     g <- sp$FutureTaintedGrouped
@@ -83,6 +84,7 @@ verifyRegimeSplits <- function(idx, bundle, s, e, testYear, splitId, spatial = N
   zCheck(rowsOf(u, "train"), bundle$pools$FutureUnseen, yr, "S1 PreVal subsampled train: year composition uniform")
   if (!is.null(it)) {
     intPool <- setdiff(which(yr >= s & yr <= testYear), tests[[1]])
+    if (isTRUE(bundle$matchUnits)) intPool <- intPool[idx$unit[intPool] %in% idx$unit[Upool]]
     zCheck(it, intPool, yr, "S1 Internal draw: year composition uniform")
     zCheck(it, intPool, idx$unit, "S1 Internal draw: unit composition uniform")
   }

@@ -14,6 +14,8 @@
 #   nothing for the birds; the kept share is stored per split), PREVAL_MINTRAIN_CASES (absolute minimum training cases, default 200),
 #   PREVAL_SLICE_ID / PREVAL_SLICE_COUNT (train only: run that slice instead of the SLURM array position; used for the small EVE test),
 #   PREVAL_ROUTEHELDOUT=1 (also build the regime FutureUnseenGrouped = PreVal validated on UNSEEN ROUTES; use with PREVAL_PLANREGIMES=FutureUnseenGrouped for an arm with only that regime),
+#   PREVAL_REGIMES (regimes that are BUILT, default all but the unseen-routes one; PREVAL_REGIMES=FutureUnseen,FutureTainted,Internal with PREVAL_MATCHUNITS=1 and PREVAL_TAG=fullPool = the caribou-style arm: no random trimming to the smallest
+#   training pool, Internal restricted to routes of the pool),
 #   PREVAL_HYPER (arm-specific network settings 'key=value;key=value': idIntercept=FALSE = route information off (tag none); idDecay=0.01 = strong intercept shrinkage (tag idd2)),
 #   PREVAL_ARM (main | spatialTest: forecasting into NEW places, regimes PreVal / status quo / spatial / PreVal+spatial; use PREVAL_TAG=spatialTest),
 #   PREVAL_PLANREGIMES (e.g. FutureUnseenRefit,FutureTaintedRefit for the refit arm, run with PREVAL_TAG=refit; needs the main run's models),
@@ -68,5 +70,6 @@ if (stage %in% c("prep", "design", "rank", "train", "analyze", "all")) {
     runSlice = sliceTask, torchThreads = envNum("PREVAL_THREADS", 1),
     rankingFile = if (nzchar(ladder)) sprintf("featureTable_%s.csv", ladder) else "featureTable.csv", ladderTag = ladder, runTag = runTag, planRegimes = envChr("PREVAL_PLANREGIMES", ""), baseRunTag = envChr("PREVAL_BASETAG", ""),
     minTrainFraction = envNum("PREVAL_MINTRAINFRAC", 0.5), minTrain = envNum("PREVAL_MINTRAIN_CASES", 200),
-    arm = envChr("PREVAL_ARM", "main"), routeHeldOut = Sys.getenv("PREVAL_ROUTEHELDOUT") == "1"))))      # PREVAL_ARM=spatialTest (run with PREVAL_TAG=spatialTest): test cases in blocks no regime sees; adds the PreVal + spatial-block regime
+    arm = envChr("PREVAL_ARM", "main"), routeHeldOut = Sys.getenv("PREVAL_ROUTEHELDOUT") == "1", matchUnits = Sys.getenv("PREVAL_MATCHUNITS") == "1"),
+    if (nzchar(Sys.getenv("PREVAL_REGIMES"))) list(regimes = Sys.getenv("PREVAL_REGIMES")))))      # PREVAL_ARM=spatialTest (run with PREVAL_TAG=spatialTest): test cases in blocks no regime sees; adds the PreVal + spatial-block regime
 }

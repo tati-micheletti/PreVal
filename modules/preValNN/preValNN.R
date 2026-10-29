@@ -26,6 +26,7 @@ defineModule(sim, list(
     defineParameter("valYears", "numeric", 1, 1, 5, "Number of validation years of PreVal (the last years of the window). 2 = two-year-validation variant."),
     defineParameter("planRegimes", "character", "", NA, NA, "Comma-separated regimes that get models (default: all five). Use FutureUnseenRefit,FutureTaintedRefit for the refit arm (post-hoc); the splits are still built for all five regimes."),
     defineParameter("arm", "character", "main", NA, NA, "main = the five-regime design; spatialTest = forecasting into NEW places: the test cases lie in spatial blocks no regime trains or validates on; regimes PreVal, status quo, spatial-block CV and PreVal + spatial blocks (run with runTag = spatialTest)."),
+    defineParameter("matchUnits", "logical", FALSE, NA, NA, "Internal draws only from routes that appear in the pool of years s..e of PreVal and the status quo (the old caribou matchAnimals rule). Used by the full-pool arm; added 2026-10-29."),
     defineParameter("routeHeldOut", "logical", FALSE, NA, NA, "Also build FutureUnseenGrouped: PreVal with validation on UNSEEN ROUTES (the validation routes are absent from training in every year; no spatial buffer). Added 2026-10-27."),
     defineParameter("spatialTestShare", "numeric", 0.25, 0.05, 0.5, "spatialTest arm: share of the forecast-year cases that form the test set (whole blocks)."),
     defineParameter("spatialValShare", "numeric", 0.25, 0.05, 1, "spatialTest arm: validation size of every regime as a share of the validation-year cases (the size the PreVal + spatial regime can reach)."),
@@ -107,7 +108,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
                             firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
-                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare, minValCombined = P(sim)$minValCombined, routeHeldOut = isTRUE(P(sim)$routeHeldOut))
+                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare, minValCombined = P(sim)$minValCombined, routeHeldOut = isTRUE(P(sim)$routeHeldOut), matchUnits = isTRUE(P(sim)$matchUnits))
         lp <- sim$networkSettings$lastPilotYear   # strict (forward) pilot only: it must never have seen a forecast year
         if (!is.null(lp) && !is.na(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)

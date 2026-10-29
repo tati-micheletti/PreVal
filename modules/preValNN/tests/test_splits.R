@@ -36,6 +36,16 @@ check(identical(b$splits, b2$splits), "same seed gives identical splits")
 b3 <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 124L, spatial = sp, minTrainFraction = 0.5)
 check(!identical(b$splits$FutureTainted, b3$splits$FutureTainted), "a different seed gives different splits")
 
+# full-pool design (caribou-style): only PreVal, status quo and Internal are built, nothing is trimmed, Internal draws only from units of the pool
+bf <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 123L, spatial = sp, regimes = c("FutureUnseen", "FutureTainted", "Internal"), matchUnits = TRUE)
+check(isTRUE(bf$ok) && setequal(names(bf$splits), c("FutureUnseen", "FutureTainted", "Internal")), "full-pool design builds PreVal, status quo and Internal only")
+szf <- sapply(bf$splits, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")))
+bu <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 123L, spatial = sp, minTrainFraction = 0.5)
+check(bf$sizes[["nTrain"]] == bf$poolSizes[["FutureTainted"]] && bf$sizes[["nTrain"]] > bu$sizes[["nTrain"]] && all(apply(szf, 1, function(r) length(unique(r)) == 1)),
+      "full-pool design: training = the whole PreVal / status-quo pool (not trimmed to the spatial pool), equal sizes in all three regimes")
+check(all(verifyRegimeSplits(idx, bf, 2008, 2014, 2015, "full", sp)$ok), "gates pass on the full-pool split, including the matched-Internal check")
+itu <- idx$unit[bf$splits$Internal$row[bf$splits$Internal$set != "test"]]; Upl <- idx$unit[which(idx$year >= 2008 & idx$year <= 2014)]
+check(all(itu %in% Upl), "matchUnits: Internal uses only units that are in the pool of years s..e")
 yrOf <- function(m, st) idx$year[m$row[m$set == st]]
 check(max(yrOf(b$splits$FutureUnseen, "train")) < min(yrOf(b$splits$FutureUnseen, "val")), "PreVal: validation strictly later than training")
 check(max(yrOf(b$splits$FutureTainted, "train")) >= min(yrOf(b$splits$FutureTainted, "val")), "status quo: validation years overlap training years")

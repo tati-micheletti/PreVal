@@ -9,7 +9,8 @@
 #'    PreVal validation size is reached (the last unit is trimmed at random); a trimmed unit's other cases are NOT used for training.
 #'  * FutureTaintedSpatial (spatial-block CV): validation = whole spatial blocks of U in random order, same size rule; training
 #'    excludes the validation blocks and a buffer around them.
-#'  * Internal (leaky random reference, only for H1, never compared with PreVal): random draw from years s..T minus the test set.
+#'  * Internal (leaky random reference, only for H1, never compared with PreVal): random draw from years s..T minus the test set
+#'    (matchUnits = TRUE, added 2026-10-29: only from units that appear in the pool U, as `matchAnimals` did in the old caribou design).
 #' EQUAL TRAINING SIZE: every regime's training set is randomly subsampled to the smallest training pool among the first four
 #' regimes (in practice the spatial-block one, which loses its buffer). Splits where that leaves less than `minTrainFraction`
 #' of the status-quo training pool are skipped, so the contrast is not confounded by how much data a regime keeps.
@@ -43,7 +44,7 @@ REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTai
 #' @param regimes subset of REGIMES to build (FutureUnseen is always built)
 buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFraction = 0.5,
                               minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8,
-                              regimes = REGIMES, valYears = 1L, minValCombined = 10L) {      # production passes 50 (preValNN parameter minValCombined)
+                              regimes = REGIMES, valYears = 1L, minValCombined = 10L, matchUnits = FALSE) {      # production passes 50 (preValNN parameter minValCombined)
   stopifnot(s <= e - valYears, e < testYear, valYears >= 1L)
   yr <- idx$year
   tp <- which(yr == testYear)
@@ -102,6 +103,7 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
   }
   if ("Internal" %in% regimes) {
     intPool <- setdiff(which(yr >= s & yr <= testYear), test)
+    if (isTRUE(matchUnits)) intPool <- intPool[idx$unit[intPool] %in% unique(idx$unit[U])]      # like the old caribou matchAnimals: Internal draws only from units present in the pool U of PreVal / status quo
     if (length(intPool) < nEq + nVal) return(list(ok = FALSE, reason = "Internal pool smaller than train+val"))
     draw <- withSeed(seed + 3L, sample(intPool, nEq + nVal))
     splits$Internal <- mk(draw[(nVal + 1L):length(draw)], draw[seq_len(nVal)])
@@ -110,7 +112,7 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
   list(ok = TRUE, reason = NA_character_, valYears = valYears, splits = sp2,
        sizes = c(nTrain = nEq, nVal = nVal, nTest = length(test)), valSizes = vapply(sp2, function(m) sum(m$set == "val"), numeric(1)),
        trainShare = nEq / poolSizes[["FutureTainted"]], poolSizes = poolSizes, pools = lapply(pools, function(p) p$train),
-       spatialValBlocks = if (!is.null(pkS)) pkS$groups else NULL)
+       spatialValBlocks = if (!is.null(pkS)) pkS$groups else NULL, matchUnits = isTRUE(matchUnits))
 }
 
 #' Per-set composition (cases, units, year range) for the audit trail.
