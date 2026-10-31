@@ -9,8 +9,8 @@
 #   PREVAL_PRESET     replication | main | newPlaces. Sets the defaults below (any explicit variable wins):
 #       replication   the OLD design as it was: regimes FutureUnseen, FutureTainted, Internal (matched on animals), full pools, split ids with suffix _temporal (same split and model seeds),
 #                     the old global ranking (no per-window ranking), levels 2,5,10,20,Inf (the second pass). Tag "replication". The acceptance arm: it must reproduce the old numbers up to float noise.
-#       main          same animals, new design: PreVal (FutureUnseenGrouped), status quo, spatial CV, PreVal + spatial, Internal; per-window ranking on the training years only; levels 2,5,10,20,Inf (= 30).
-#       newPlaces     test strata in blocks no regime trains or validates on: PreVal, status quo, spatial CV, PreVal + spatial (arm spatialTest, tag newPlaces).
+#       main          same animals, new design (2026-10-31): PreVal (FutureUnseenGrouped), status quo, Internal (matched on animals); NO spatial regimes; per-window ranking on the training years only; levels 2,5,10,20,30.
+#       newPlaces     test strata in blocks no regime trains or validates on: PreVal, status quo, spatial CV, PreVal + spatial (arm spatialTest, tag newPlaces); plan excludes the old FutureUnseen and Internal.
 #   PREVAL_TAG, PREVAL_REGIMES, PREVAL_PLANREGIMES, PREVAL_MATCHUNITS, PREVAL_ROUTEHELDOUT, PREVAL_SPLITSUFFIX, PREVAL_RANKPERWINDOW, PREVAL_RANKFROM, PREVAL_ARM,
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS (300; the first old pass used 50), PREVAL_PATIENCE (10, as in the old runs), PREVAL_REPLICATES (1; the old second pass had 3), PREVAL_START (2013), PREVAL_END (2022), PREVAL_MINTRAIN (1 year), PREVAL_HORIZONS (1..8),
 #   PREVAL_BLOCKKM (100), PREVAL_BUFFERKM (10), PREVAL_SLICE_ID / PREVAL_SLICE_COUNT, PREVAL_THREADS, PREVAL_ONLY_MISSING, PREVAL_NEW_PLAN
@@ -28,9 +28,11 @@ envLgl <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v 
 preset <- envChr("PREVAL_PRESET", "main"); stopifnot(preset %in% c("replication", "main", "newPlaces"))
 P <- list(
   replication = list(tag = "replication", regimes = "FutureUnseen,FutureTainted,Internal", plan = "", matchUnits = TRUE, routeHeld = FALSE, suffix = "_temporal", rankPerWindow = FALSE, arm = "main", complexity = "2,5,10,20,Inf"),
-  main        = list(tag = "main", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped,Internal",
-                     plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped,Internal", matchUnits = TRUE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "main", complexity = "2,5,10,20,30"),
-  newPlaces   = list(tag = "newPlaces", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30"))[[preset]]
+  # main REDEFINED 2026-10-31 (Tati: two-arm structure): NO spatial regimes in the same-animals arm, so no random cut to the smallest (buffered) pool and all splits / forecast years survive.
+  # FutureUnseen (validation year with the animals still in training) is built as a by-product only; it is NOT in the training plan.
+  main        = list(tag = "main", regimes = "FutureUnseen,FutureTainted,FutureUnseenGrouped,Internal",
+                     plan = "FutureTainted,FutureUnseenGrouped,Internal", matchUnits = TRUE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "main", complexity = "2,5,10,20,30"),
+  newPlaces   = list(tag = "newPlaces", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30"))[[preset]]
 stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "rank", "train", "analyze", "all"))
 outPath <- envChr("PREVAL_OUT", "outputs/caribou_engine"); species <- "caribou"; speciesDir <- file.path(outPath, species)
 finalDir <- envChr("PREVAL_FINAL", speciesDir); runTag <- envChr("PREVAL_TAG", P$tag)
