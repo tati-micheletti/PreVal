@@ -19,6 +19,9 @@ defineModule(sim, list(
     defineParameter("response", "character", "Reviere", NA, NA, "Response column."),
     defineParameter("responseType", "character", "count", NA, NA, "Adapter: 'count' or 'continuous'."),
     defineParameter("unitCol", "character", "SITE_ID", NA, NA, "Unit that repeats across years (route)."),
+    defineParameter("splitSuffix", "character", "", NA, NA, "Suffix of the split ids (and so of the split and model seeds); '_temporal' reproduces the old caribou design exactly."),
+    defineParameter("dataLayout", "character", "cases", NA, NA, "'cases' = one row per case (birds); 'strata' = one case is a stratum of 11 steps (caribou; strataLayout.R, added 2026-10-30). With 'strata' the final table is the long table (11 rows per stratum, observed step first), unitCol = 'id'."),
+    defineParameter("primaryLoss", "character", "calibrated", NA, NA, "Loss of the folder 'analysis': 'calibrated' (birds default: dispersion re-estimated on each regime's validation cases) or 'fitted' (the raw loss; caribou: raw cross-entropy primary, temperature-calibrated next to it)."),
     defineParameter("yearCol", "character", "year", NA, NA, "Year column."),
     defineParameter("startYear", "numeric", 2005, NA, NA, "First analysis year."),
     defineParameter("endYear", "numeric", 2024, NA, NA, "Last year with data."),
@@ -98,7 +101,8 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         sim$experimentPlan <- data.table::fread(planPath)
       } else {
         if (stage %in% c("train", "rank")) stop("stage = '", stage, "' needs the output of stage = 'design' in ", outDir)
-        tab <- data.table::as.data.table(sim$finalTable); idx <- buildCaseIndex(tab, P(sim)$unitCol, P(sim)$yearCol, "x", "y")
+        tab <- data.table::as.data.table(sim$finalTable)
+        idx <- if (identical(P(sim)$dataLayout, "strata")) buildStrataCaseIndex(tab, unitCol = P(sim)$unitCol, yearCol = P(sim)$yearCol) else buildCaseIndex(tab, P(sim)$unitCol, P(sim)$yearCol, "x", "y")
         bk <- P(sim)$blockKm
         if (is.na(bk)) bk <- readRDS(file.path(root, "blockSize.rds"))$blockKm
         bf <- P(sim)$bufferKm; if (is.na(bf)) bf <- bk / 8
@@ -108,7 +112,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
                             firstForecastYear = if (is.null(sim$networkSettings$lastPilotYear) || is.na(sim$networkSettings$lastPilotYear)) -Inf else sim$networkSettings$lastPilotYear + 1,
                             blockKm = bk, bufferKm = bf, nFolds = P(sim)$nFolds, regimes = trimws(strsplit(P(sim)$regimes, ",")[[1]]),
                             minTrain = P(sim)$minTrain, minVal = P(sim)$minVal, minTest = P(sim)$minTest, minTrainFraction = P(sim)$minTrainFraction,
-                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare, minValCombined = P(sim)$minValCombined, routeHeldOut = isTRUE(P(sim)$routeHeldOut), matchUnits = isTRUE(P(sim)$matchUnits))
+                            registryPath = file.path(outDir, "seedRegistry.csv"), arm = P(sim)$arm, spatialTestShare = P(sim)$spatialTestShare, spatialValShare = P(sim)$spatialValShare, minValCombined = P(sim)$minValCombined, routeHeldOut = isTRUE(P(sim)$routeHeldOut), matchUnits = isTRUE(P(sim)$matchUnits), splitSuffix = P(sim)$splitSuffix)
         lp <- sim$networkSettings$lastPilotYear   # strict (forward) pilot only: it must never have seen a forecast year
         if (!is.null(lp) && !is.na(lp) && min(des$plan$testYear) <= lp) stop("The design contains forecast year ", min(des$plan$testYear), " but the network pilot used years up to ", lp, ". Re-run preValNN_Global with a smaller lastPilotYear.")
         writeManifests(des$bundles, manifestDir)
@@ -117,7 +121,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         if (!is.null(des$skipped)) data.table::fwrite(des$skipped, file.path(outDir, "splitsSkipped.csv"))
         saveRDS(list(spatial = des$spatial, params = P(sim), blockKm = bk, bufferKm = bf), file.path(outDir, "designParams.rds"))
         saveRDS(idx, file.path(outDir, "caseIndex.rds"))
-        au <- auditManifests(idx, des$plan, manifestDir, des$spatial); data.table::fwrite(au, file.path(outDir, "splitChecks_reaudit.csv"))
+        au <- auditManifests(idx, des$plan, manifestDir, des$spatial, matchUnits = isTRUE(P(sim)$matchUnits)); data.table::fwrite(au, file.path(outDir, "splitChecks_reaudit.csv"))
         sim$experimentPlan <- des$plan
       }
       if (!P(sim)$modComplex %in% c("all", as.character(sim$experimentPlan$numberOfCovariates)))
@@ -150,7 +154,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
           data.table::fwrite(r, f); next
         }
         if (isRefit) stop("Refit run: the base run has no ranking for window ", s, "-", e, " (", src, "); run the rank stage of the base run first.")
-        if (is.null(store)) store <- buildCaseStore(tab, idx, feats, P(sim)$response)
+        if (is.null(store)) store <- buildCaseStore(tab, idx, feats, P(sim)$response, layout = P(sim)$dataLayout)
         message(sprintf("ranking window %d-%d on training years %s (%d of %d in this process)", s, e, yrs, i, nrow(win)))
         r <- rankCovariates(store, feats, adapter, hyper, seed = stringSeed(paste("rankWindow", s, e, v)), mode = "random", rankYears = s:(e - v),
                             nRep = P(sim)$nRepImportance, groupR = P(sim)$groupR, device = device, zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience)
@@ -165,7 +169,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       tab <- data.table::as.data.table(sim$finalTable); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       rk <- data.table::fread(file.path(root, P(sim)$rankingFile))
       feats <- rk$Feature
-      store <- buildCaseStore(tab, idx, feats, P(sim)$response)
+      store <- buildCaseStore(tab, idx, feats, P(sim)$response, layout = P(sim)$dataLayout)
       device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"
       torch::torch_set_num_threads(as.integer(P(sim)$torchThreads))
       hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch
@@ -207,12 +211,13 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       missing <- setdiff(paste0(plan$modelName, "_finalDT.csv"), done)
       if (length(missing)) { writeLines(missing, file.path(outDir, "modelsMissing.txt")); stop(length(missing), " models have no result (see modelsMissing.txt).") }
       dp <- readRDS(file.path(outDir, "designParams.rds")); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
-      au <- auditManifests(idx, plan, file.path(outDir, "splits"), dp$spatial); data.table::fwrite(au, file.path(outDir, "splitChecks_final.csv"))
+      au <- auditManifests(idx, plan, file.path(outDir, "splits"), dp$spatial, matchUnits = isTRUE(P(sim)$matchUnits)); data.table::fwrite(au, file.path(outDir, "splitChecks_final.csv"))
       rk <- data.table::fread(file.path(root, P(sim)$rankingFile))
-      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk), lossType = "calibrated")   # primary (dispersion re-estimated on each regime's validation cases)
-      analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis_fittedTheta"), nCovariatesAll = nrow(rk), lossType = "fitted")                    # sensitivity: dispersion as learned on the training rows
+      pl <- P(sim)$primaryLoss      # birds: 'calibrated' primary (dispersion re-estimated on each regime's validation cases), 'fitted' sensitivity (folder analysis_fittedTheta); caribou: 'fitted' = RAW loss primary, calibrated next to it (analysis_calibrated)
+      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk), lossType = pl)
+      analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, if (pl == "calibrated") "analysis_fittedTheta" else "analysis_calibrated"), nCovariatesAll = nrow(rk), lossType = if (pl == "calibrated") "fitted" else "calibrated")
       tab <- data.table::as.data.table(sim$finalTable)
-      cs <- coefficientStability(tab[tab[[P(sim)$yearCol]] <= P(sim)$endYear], P(sim)$response, featuresForLevel(rk, 10), P(sim)$yearCol)
+      cs <- if (identical(P(sim)$dataLayout, "strata")) NULL else coefficientStability(tab[tab[[P(sim)$yearCol]] <= P(sim)$endYear], P(sim)$response, featuresForLevel(rk, 10), P(sim)$yearCol)
       if (!is.null(cs)) data.table::fwrite(cs, file.path(outDir, "analysis", "coefficientStability_top10.csv"))
     },
     warning(noEventWarning(sim)))

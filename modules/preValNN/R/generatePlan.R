@@ -19,7 +19,7 @@
 generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
                          nReplicates = 1L, firstForecastYear = -Inf, planRegimes = NULL, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL,
-                         arm = c("main", "spatialTest"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE) {
+                         arm = c("main", "spatialTest"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE, splitSuffix = "") {      # splitSuffix (2026-10-30): "_temporal" reproduces the split ids, and so the split and model seeds, of the old caribou design
   arm <- match.arg(arm)      # spatialTest: the test cases lie in blocks no regime sees; regimes = SPATIALTEST_REGIMES (spatialTestSplits.R)
   # routeHeldOut (2026-10-27): also build FutureUnseenGrouped = PreVal validated on UNSEEN ROUTES (no spatial buffer); in the main arm it is added to the regimes, in the spatialTest arm it is passed on
   if (arm == "spatialTest") { regimes <- SPATIALTEST_REGIMES; if (minVal >= 100L) minVal <- 50L; if (minTrainFraction > 0.5) minTrainFraction <- 0.5 }
@@ -32,7 +32,7 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
     if (!length(Ts)) return(NULL)
     data.table::data.table(s = s, e = e, testYear = Ts)
   }))))
-  grid[, splitId := sprintf("s%d_e%d_T%d", s, e, testYear)]
+  grid[, splitId := sprintf("s%d_e%d_T%d%s", s, e, testYear, splitSuffix)]
   grid[, splitSeed := vapply(splitId, stringSeed, integer(1))]
   if (anyDuplicated(grid$splitSeed)) stop("Hash collision between split seeds; change the id scheme.")
   bundles <- list(); checks <- list(); summaries <- list(); skipped <- list()
@@ -65,6 +65,7 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
     x <- data.table::copy(rows); x[, `:=`(numberOfCovariates = k, replicate = r)]; x }))))
   plan[, groupId := paste0("Grp_", numberOfCovariates, "_", windowStart, "_", historyEnd, "_", testYear, ifelse(replicate > 1, paste0("_r", replicate), ""), ifelse(valYears > 1, paste0("_v", valYears), ""))]
   plan[, modelName := paste0(groupId, "_", typeValidation)]
+  if (isTRUE(matchUnits)) plan[, matchUnits := TRUE]      # (2026-10-30) the post-hoc audit needs to know that Internal was drawn from the units of the pool only
   plan[, modelSeed := mapply(function(sid, k, r) stringSeed(paste(sid, "cov", k, "rep", r)), splitId, numberOfCovariates, replicate)]
   if (anyDuplicated(unique(plan[, .(splitId, numberOfCovariates, replicate, modelSeed)])$modelSeed)) stop("Hash collision between model seeds.")
   if (anyDuplicated(plan$modelName)) stop("Duplicated model names in the plan.")
@@ -93,7 +94,7 @@ readManifest <- function(manifestDir, splitId, regime) {
 }
 
 #' Re-verify ALL manifests on disk against the case index (post-hoc audit of what was run).
-auditManifests <- function(idx, plan, manifestDir, spatial) {
+auditManifests <- function(idx, plan, manifestDir, spatial, matchUnits = FALSE) {      # matchUnits (2026-10-31): the design setting, for plans written before the plan carried a matchUnits column
   out <- list()
   for (sid in unique(plan$splitId)) {
     p <- plan[splitId == sid][1]
@@ -105,7 +106,7 @@ auditManifests <- function(idx, plan, manifestDir, spatial) {
       out[[sid]] <- verifySpatialTestSplits(idx, list(ok = TRUE, splits = splits, valYears = v), p$windowStart, p$historyEnd, p$testYear, sid, spatial = spatial, valYears = v); next
     }
     pools <- list(FutureUnseen = idx[year >= p$windowStart & year <= p$historyEnd - v]$row)
-    out[[sid]] <- verifyRegimeSplits(idx, list(ok = TRUE, splits = splits, pools = pools, spatialValBlocks = sv, valYears = v),
+    out[[sid]] <- verifyRegimeSplits(idx, list(ok = TRUE, splits = splits, pools = pools, spatialValBlocks = sv, valYears = v, matchUnits = isTRUE(matchUnits) || ("matchUnits" %in% names(p) && isTRUE(as.logical(p$matchUnits)))),
                                      p$windowStart, p$historyEnd, p$testYear, sid, spatial = spatial, valYears = v)
   }
   data.table::rbindlist(out)

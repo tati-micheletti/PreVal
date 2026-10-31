@@ -1,10 +1,15 @@
 #' Case store, standardisation, scoring and the generic training loop (adapter-driven).
 
+# Layout helpers (2026-10-30; the stratum layout is in strataLayout.R): number of features and the cases (rows) of a matrix [cases, features] or of a stratum tensor [cases, steps, features]
+.nFeat <- function(x) x$size(x$dim())
+.rowsOf <- function(x, i) if (x$dim() == 3L) x[i, , ] else x[i, ]
+
 #' All candidate features in ONE numeric matrix, built once per process. Models select cases by row and features by name.
 #' @param tab final table for modeling
 #' @param idx case index (buildCaseIndex)
 #' @param response column name of the response
-buildCaseStore <- function(tab, idx, featureNames, response) {
+buildCaseStore <- function(tab, idx, featureNames, response, layout = "cases") {
+  if (identical(layout, "strata")) return(buildStrataStoreEngine(tab, idx, featureNames))      # stratum layout (strataLayout.R, 2026-10-30); the cases path below is unchanged
   miss <- setdiff(c(featureNames, response), names(tab))
   if (length(miss)) stop("buildCaseStore: columns missing from the table: ", paste(miss, collapse = ", "))
   X <- as.matrix(tab[, featureNames, with = FALSE]); storage.mode(X) <- "double"
@@ -17,6 +22,7 @@ buildCaseStore <- function(tab, idx, featureNames, response) {
 }
 
 storeSlice <- function(store, rows, features, device = "cpu") {
+  if (identical(store$layout, "strata")) return(.strataSlice(store, rows, features, device))      # stratum layout (strataLayout.R)
   fi <- match(features, store$featureNames)
   if (anyNA(fi)) stop("storeSlice: unknown features: ", paste(features[is.na(fi)], collapse = ", "))
   list(x = torch::torch_tensor(store$X[rows, fi, drop = FALSE], dtype = torch::torch_float(), device = device),
@@ -26,11 +32,13 @@ storeSlice <- function(store, rows, features, device = "cpu") {
 
 #' Standardisation statistics from the TRAINING set only (sd 0 or NA -> 1).
 scaleStats <- function(xTrain, featureNames) {
+  if (xTrain$dim() == 3L) return(.scaleStats3(xTrain, featureNames))      # stratum tensor (strataLayout.R)
   m <- as.matrix(xTrain$cpu()); mu <- colMeans(m); sg <- apply(m, 2, stats::sd)
   sg[is.na(sg) | sg == 0] <- 1; mu[is.na(mu)] <- 0
   stats::setNames(Map(function(a, b) list(mean = a, sd = b), mu, sg), featureNames)
 }
 applyScale <- function(x, stats, zClip = 10) {
+  if (x$dim() == 3L) return(.applyScale3(x, stats, zClip))      # stratum tensor (strataLayout.R)
   mu <- torch::torch_tensor(vapply(stats, `[[`, numeric(1), "mean"), dtype = torch::torch_float(), device = x$device)$view(c(1, -1))
   sg <- torch::torch_tensor(vapply(stats, `[[`, numeric(1), "sd"), dtype = torch::torch_float(), device = x$device)$view(c(1, -1))
   xs <- (x - mu) / sg
@@ -53,7 +61,7 @@ scoreCases <- function(net, adapter, x, y, id, trainUnitsSeen, nUnits, chunk = 4
   torch::with_no_grad({
     for (a in seq(1L, n, by = chunk)) {
       z <- min(a + chunk - 1L, n); k <- k + 1L
-      o <- net(x[a:z, ], idEff[a:z]); yy <- y[a:z]
+      o <- net(.rowsOf(x, a:z), idEff[a:z]); yy <- y[a:z]
       loss[a:z] <- as.numeric(adapter$caseLoss(o, yy, net)$cpu())
       parts[[k]] <- adapter$summarise(o, yy, net)
     }
@@ -69,7 +77,7 @@ scoreCases <- function(net, adapter, x, y, id, trainUnitsSeen, nUnits, chunk = 4
 fitNet <- function(adapter, hyper, tr, va, nUnits, seed, device = "cpu", patience = 2L, factor = 0.5, minLr = 1e-6,
                    threshold = 1e-4, earlyStopPatience = 15L, verbose = FALSE, diag = NULL) {
   torch::torch_manual_seed(seed)
-  net <- adapter$makeNet(tr$x$size(2), nUnits, hyper)$to(device = device)
+  net <- adapter$makeNet(.nFeat(tr$x), nUnits, hyper)$to(device = device)
   lr <- hyper$lr %||% 1e-3; batchSize <- hyper$batchSize %||% 128L; epochs <- hyper$epochs %||% 100L
   pn <- names(net$parameters); isId <- grepl("^idInt", pn)
   groups <- list(list(params = unname(net$parameters[!isId]), weight_decay = hyper$weightDecay %||% 0))
@@ -84,7 +92,7 @@ fitNet <- function(adapter, hyper, tr, va, nUnits, seed, device = "cpu", patienc
     for (a in seq(1L, n, by = batchSize)) {
       z <- min(a + batchSize - 1L, n); ii <- perm[a:z]
       opt$zero_grad()
-      loss <- adapter$caseLoss(net(tr$x[ii, ], tr$id[ii]), tr$y[ii], net)$mean()
+      loss <- adapter$caseLoss(net(.rowsOf(tr$x, ii), tr$id[ii]), tr$y[ii], net)$mean()
       loss$backward(); opt$step()
       runLoss <- runLoss + loss$item() * (z - a + 1L)
     }

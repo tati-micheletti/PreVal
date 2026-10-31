@@ -4,9 +4,11 @@
 #' the weighted-Euclidean distance (in the standardised covariates of the level, weighted by the window's permutation importance) from the test case to its nearest
 #' REFERENCE case, divided by the mean nearest-neighbour distance among reference cases. The reference set is PreVal's TRAINING cases of that split (its manifest), so a test
 #' case has ONE novelty value that does not depend on the regime. Per-case losses are the calibrated ones (lossCal).
-NOVELTY_LABELS <- c(FutureUnseen = "PreVal", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial", FutureUnseenGrouped = "PreValRoutes")
-NOVELTY_PAIRS <- list(c("PreVal", "StatusQuo"), c("Spatial", "StatusQuo"), c("PreValSpatial", "PreVal"), c("PreValSpatial", "Spatial"), c("PreValSpatial", "StatusQuo"),
-                      c("PreValRoutes", "PreVal"), c("PreValRoutes", "StatusQuo"), c("PreValRoutes", "Spatial"), c("PreValSpatial", "PreValRoutes"))
+# Labels since 2026-10-30: "PreVal" = FutureUnseenGrouped (validation on the last year AND on unseen units); the old FutureUnseen (units still in training) is "FutureOnly".
+# Novelty tables written before that date (birds runs of 2026-10-26) use the old labels: "PreVal" there = FutureUnseen, "PreValRoutes" = FutureUnseenGrouped.
+NOVELTY_LABELS <- c(FutureUnseen = "FutureOnly", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial", FutureUnseenGrouped = "PreVal")
+NOVELTY_PAIRS <- list(c("PreVal", "StatusQuo"), c("Spatial", "StatusQuo"), c("PreVal", "Spatial"), c("PreValSpatial", "Spatial"), c("PreValSpatial", "StatusQuo"),
+                      c("PreVal", "FutureOnly"), c("PreValSpatial", "PreVal"), c("FutureOnly", "StatusQuo"), c("PreValSpatial", "FutureOnly"))
 
 #' @param Zref,Ztest standardised and importance-weighted covariate matrices (reference cases, test cases)
 #' @param nSample number of reference cases (random, seeded) used to estimate the mean nearest-neighbour distance among reference cases (leave-one-out)
@@ -27,15 +29,17 @@ noveltyDI <- function(Zref, Ztest, nSample = 1000L, seed = 1L) {
 #' @param runDir run folder (experimentPlan.csv, caseIndex.rds, splits/, rankings/, testedModels/*_perCase.rds)
 #' @param tab final table (rows aligned with caseIndex.rds)
 #' @return data.table(splitId, testYear, level, regime, row, DI, lossCal)
-noveltyCases <- function(runDir, tab, levels = c(10, 50), nonFeatures = c("SITE_ID", "year", "Reviere", "x", "y"), nSample = 1000L, verbose = TRUE) {
+noveltyCases <- function(runDir, tab, levels = c(10, 50), nonFeatures = c("SITE_ID", "year", "Reviere", "x", "y"), nSample = 1000L, verbose = TRUE,
+                         refRegime = "FutureUnseen", Xcases = NULL) {      # refRegime / Xcases (2026-10-30): caribou uses PreVal on unseen animals as the reference and a case matrix = mean over the 11 steps of each stratum
   plan <- data.table::fread(file.path(runDir, "experimentPlan.csv")); idx <- readRDS(file.path(runDir, "caseIndex.rds"))
-  if (nrow(tab) != nrow(idx)) stop("noveltyCases: the final table and the case index of ", runDir, " have different numbers of rows")
-  feats <- setdiff(names(tab), nonFeatures); X <- as.matrix(as.data.frame(tab)[, feats, drop = FALSE]); storage.mode(X) <- "double"
+  if (is.null(Xcases) && nrow(tab) != nrow(idx)) stop("noveltyCases: the final table and the case index of ", runDir, " have different numbers of rows")
+  if (!is.null(Xcases) && nrow(Xcases) != nrow(idx)) stop("noveltyCases: Xcases and the case index of ", runDir, " have different numbers of rows")
+  if (is.null(Xcases)) { feats <- setdiff(names(tab), nonFeatures); X <- as.matrix(as.data.frame(tab)[, feats, drop = FALSE]); storage.mode(X) <- "double" } else X <- Xcases
   plan <- plan[numberOfCovariates %in% levels & typeValidation %in% names(NOVELTY_LABELS)]
   splits <- unique(plan[, .(splitId, windowStart, historyEnd)]); res <- list(); nMissing <- 0L
   for (i in seq_len(nrow(splits))) {
     sid <- splits$splitId[i]; rk <- data.table::fread(file.path(runDir, "rankings", sprintf("s%d_e%d.csv", splits$windowStart[i], splits$historyEnd[i])))
-    man <- readManifest(file.path(runDir, "splits"), sid, "FutureUnseen"); ref <- man$row[man$set == "train"]; tst <- man$row[man$set == "test"]
+    man <- readManifest(file.path(runDir, "splits"), sid, refRegime); ref <- man$row[man$set == "train"]; tst <- man$row[man$set == "test"]
     for (k in levels) {
       pk <- plan[splitId == sid & numberOfCovariates == k]; if (!nrow(pk)) next
       ff <- featuresForLevel(rk, k); w <- pmax(rk$Importance[match(ff, rk$Feature)], 0); w <- if (mean(w) > 0) w / mean(w) else rep(1, length(ff))

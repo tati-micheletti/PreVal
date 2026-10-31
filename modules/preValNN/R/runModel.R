@@ -40,8 +40,11 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
   }
   teT <- sc("test", te, teRows); vaT <- sc("val", va, vaRows)
   dispFit <- if ("theta" %in% names(vaT)) vaT$theta[1] else NA_real_             # dispersion learned on the training rows
-  dispCal <- if (is.function(adapter$calibrate)) adapter$calibrate(vaT$pred, vaT$obs) else NA_real_   # re-estimated on this regime's validation cases (adapters.R)
-  if (is.finite(dispCal)) { teT[, lossCal := adapter$nllWith(pred, obs, dispCal)]; vaT[, lossCal := adapter$nllWith(pred, obs, dispCal)] }
+  dispCal <- if (is.function(adapter$calibrateTable)) adapter$calibrateTable(vaT)                  # stratum adapter: temperature from the validation scores (strataLayout.R)
+             else if (is.function(adapter$calibrate)) adapter$calibrate(vaT$pred, vaT$obs) else NA_real_   # re-estimated on this regime's validation cases (adapters.R)
+  if (is.finite(dispCal) && is.function(adapter$lossCalTable)) { teT[, lossCal := adapter$lossCalTable(teT, dispCal)]; vaT[, lossCal := adapter$lossCalTable(vaT, dispCal)] }
+  else if (is.finite(dispCal)) { teT[, lossCal := adapter$nllWith(pred, obs, dispCal)]; vaT[, lossCal := adapter$nllWith(pred, obs, dispCal)] }
+  if (length(adapter$dropColumns)) { teT[, (adapter$dropColumns) := NULL]; vaT[, (adapter$dropColumns) := NULL] }      # large score matrices are not kept on disk
   trLoss <- mean(scoreCases(fit$net, adapter, tr$x, tr$y, tr$id, fit$trainUnitsSeen, store$nUnits)$loss)
   saveRDS(rbind(teT, vaT, fill = TRUE), file.path(outputDir, paste0(modelName, "_perCase.rds")))
   data.table::fwrite(fit$history, file.path(outputDir, paste0(modelName, "_history.csv")))
@@ -65,6 +68,8 @@ runModel <- function(store, manifest, planRow, features, adapter, hyper, outputD
     dispFit = dispFit, dispCal = dispCal,
     valLossCal = if (is.finite(dispCal)) mean(vaT$lossCal) else NA_real_, testLossCal = if (is.finite(dispCal)) mean(teT$lossCal) else NA_real_,
     secondsTotal = as.numeric(difftime(Sys.time(), t0, units = "secs")), modelWeight = weightsPath)
+  if ("correct" %in% names(teT)) finalDT[, `:=`(testAccuracy = mean(teT$correct), testLossSeen = if (any(teT$seenUnit)) mean(teT$loss[teT$seenUnit]) else NA_real_,      # stratum layout: top-1 accuracy and seen/unseen split
+                                                testLossUnseen = if (any(!teT$seenUnit)) mean(teT$loss[!teT$seenUnit]) else NA_real_)]
   data.table::fwrite(finalDT, finalPath)
   rm(tr, va, te, fit); gc(verbose = FALSE)
   finalDT

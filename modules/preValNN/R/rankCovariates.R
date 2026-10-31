@@ -36,7 +36,8 @@ rankCovariates <- function(store, features, adapter, hyper, seed, mode = c("rand
   base <- mean(scoreCases(net, adapter, te$x, te$y, te$id, seen, store$nUnits)$loss)
 
   # correlation groups (connected components of |r| > groupR on the standardised training cases)
-  M <- as.matrix(tr$x$cpu()); Cm <- abs(stats::cor(M)); Cm[is.na(Cm)] <- 0; diag(Cm) <- 0
+  strata <- tr$x$dim() == 3L                                    # stratum layout: the rows of M are strata x steps (strataLayout.R)
+  M <- if (strata) as.matrix(tr$x$cpu()$reshape(c(-1, tr$x$size(3)))) else as.matrix(tr$x$cpu()); Cm <- abs(stats::cor(M)); Cm[is.na(Cm)] <- 0; diag(Cm) <- 0
   comp <- seq_along(features); names(comp) <- features
   for (it in seq_along(features)) {                      # label propagation until stable (cheap: <= ~100 features)
     new <- comp
@@ -45,7 +46,7 @@ rankCovariates <- function(store, features, adapter, hyper, seed, mode = c("rand
     comp <- new
   }
   grp <- match(comp, unique(comp))
-  y <- store$y[trRows]
+  y <- if (strata) rep(c(1, rep(0, tr$x$size(2) - 1L)), length(trRows)) else store$y[trRows]      # strata: association with BEING the observed step
   assoc <- vapply(seq_along(features), function(i) { r <- suppressWarnings(stats::cor(M[, i], y, method = "spearman")); if (is.na(r)) 0 else abs(r) }, numeric(1))
 
   n <- te$x$size(1); torch::torch_manual_seed(seed + 2L)
@@ -53,7 +54,7 @@ rankCovariates <- function(store, features, adapter, hyper, seed, mode = c("rand
     cols <- which(grp == gi); d <- numeric(nRep)
     for (r in seq_len(nRep)) {
       perm <- torch::torch_randperm(n) + 1L
-      xp <- te$x$clone(); xp[, cols] <- te$x[perm, ][, cols]
+      xp <- te$x$clone(); if (strata) { sh <- .shuffleWithinStrata(te$x[, , cols, drop = FALSE]); xp[, , cols] <- if (length(cols) == 1L) sh$squeeze(3) else sh } else xp[, cols] <- te$x[perm, ][, cols]
       d[r] <- mean(scoreCases(net, adapter, xp, te$y, te$id, seen, store$nUnits)$loss) - base
     }
     c(mean(d), stats::sd(d))

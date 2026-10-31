@@ -30,6 +30,13 @@ if [ "${PREVAL_DATASET}" = "birds" ]; then
   export PREVAL_SCRIPT="${PREVAL_SCRIPT:-birds/runMe_birds.R}"
   export PREVAL_FINAL="${PREVAL_FINAL:-${PREVAL_DATA_ROOT}/birds/data}"
 fi
+# CARIBOU ENGINE (2026-10-30): the caribou data through the standardised engine (caribou/runMe_caribou.R, modules/preValNN with dataLayout = strata); use PREVAL_DATASET=caribouNN.
+# The prepared table, ranking and settings are written by its prep stage into ${PREVAL_OUT}/caribou (default /data/birds/PreVal/caribou/outputs/engine).
+if [ "${PREVAL_DATASET}" = "caribouNN" ]; then
+  export PREVAL_SCRIPT="${PREVAL_SCRIPT:-caribou/runMe_caribou.R}"
+  export PREVAL_OUT="${PREVAL_OUT:-${PREVAL_DATA_ROOT}/caribou/outputs/engine}"
+  export PREVAL_FINAL="${PREVAL_FINAL:-${PREVAL_OUT}/caribou}"
+fi
 export PREVAL_WORK="${PREVAL_WORK:-/work/${USER}/preval}"                     # scratch and logs only
 # RAM disk avoidance
 export TMPDIR="${PREVAL_WORK}/tmp/${SLURM_JOB_ID:-interactive}"

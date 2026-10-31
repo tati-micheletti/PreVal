@@ -104,5 +104,5 @@ adapterGaussian <- function() {
        })
 }
 
-getAdapter <- function(responseType) switch(responseType, count = adapterCount(), continuous = adapterGaussian(),
-                                            stop("No adapter for responseType '", responseType, "' yet (available: count, continuous)."))
+getAdapter <- function(responseType) switch(responseType, count = adapterCount(), continuous = adapterGaussian(), stratum = adapterStratum(),      # stratum: strataLayout.R (caribou)
+                                            stop("No adapter for responseType '", responseType, "' yet (available: count, continuous, stratum)."))
