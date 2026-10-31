@@ -2,12 +2,12 @@
 # Caribou through the standardised engine on EVE (caribou/runMe_caribou.R). The design (plan, manifests) and the per-window rankings are made first (design and rank stages, local or one
 # EVE job), uploaded to ${PREVAL_OUT}/caribou/run<tag>, then this script submits the training array and the analysis. Run from the repo root on an EVE login node.
 #   Test (a few models):   PREVAL_PRESET=replication bash eve/submit_caribou.sh test
-#   Real run:              PREVAL_PRESET=main|replication|newPlaces [NTASKS=200] [MAXPAR=15] [TRAIN_TIME=04:00:00] bash eve/submit_caribou.sh all
+#   Real run:              PREVAL_PRESET=main|replication|newPlaces|newPlaces25 [NTASKS=200] [MAXPAR=15] [TRAIN_TIME=04:00:00] bash eve/submit_caribou.sh all
 # Finished models are skipped, so resubmitting after a failure never repeats work. One settings file per submission (species, tag, process id in its name).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-MODE="${1:-}"; [ "${MODE}" = "test" ] || [ "${MODE}" = "all" ] || { echo "usage: PREVAL_PRESET=<replication|main|newPlaces> bash eve/submit_caribou.sh test|all"; exit 1; }
-: "${PREVAL_PRESET:?set PREVAL_PRESET to replication, main or newPlaces}"
+MODE="${1:-}"; [ "${MODE}" = "test" ] || [ "${MODE}" = "all" ] || { echo "usage: PREVAL_PRESET=<replication|main|newPlaces|newPlaces25> bash eve/submit_caribou.sh test|all"; exit 1; }
+: "${PREVAL_PRESET:?set PREVAL_PRESET to replication, main, newPlaces or newPlaces25}"
 export PREVAL_DATASET=caribouNN
 OUTROOT="${PREVAL_OUT:-/data/birds/PreVal/caribou/outputs/engine}"
 TAG="${PREVAL_TAG:-${PREVAL_PRESET}}"
