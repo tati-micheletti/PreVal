@@ -13,6 +13,7 @@
 #       newPlaces     test strata in blocks no regime trains or validates on: PreVal, status quo, spatial CV, PreVal + spatial (arm spatialTest, tag newPlaces); plan excludes the old FutureUnseen and Internal.
 #   PREVAL_TAG, PREVAL_REGIMES, PREVAL_PLANREGIMES, PREVAL_MATCHUNITS, PREVAL_ROUTEHELDOUT, PREVAL_SPLITSUFFIX, PREVAL_RANKPERWINDOW, PREVAL_RANKFROM, PREVAL_ARM,
 #   PREVAL_COMPLEXITY, PREVAL_EPOCHS (300; the first old pass used 50), PREVAL_PATIENCE (10, as in the old runs), PREVAL_REPLICATES (1; the old second pass had 3), PREVAL_START (2013), PREVAL_END (2022), PREVAL_MINTRAIN (1 year), PREVAL_HORIZONS (1..8),
+#   PREVAL_UNSEENVALSHARE (validation share of PreVal on unseen animals; main 0.30, else 0.15), PREVAL_MINTRAINFRAC (0.5; newPlaces 0.4), PREVAL_SPATIALTESTSHARE / PREVAL_SPATIALVALSHARE (new places: 0.25 / 0.25),
 #   PREVAL_BLOCKKM (100), PREVAL_BUFFERKM (10), PREVAL_SLICE_ID / PREVAL_SLICE_COUNT, PREVAL_THREADS, PREVAL_ONLY_MISSING, PREVAL_NEW_PLAN
 #   prep stage only: PREVAL_CARIBOU_PREPARED (default results_firstpass/preparedModelInputs.csv: the saved result of prepareNNdata), PREVAL_RANKING_CSV (global ranking, default
 #   results_firstpass/featureTable.csv), PREVAL_CARIBOU_NSTRATA (smoke tests: read only this many strata)
@@ -27,12 +28,12 @@ envChr <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v 
 envLgl <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v %in% c("1", "TRUE", "true") else default }
 preset <- envChr("PREVAL_PRESET", "main"); stopifnot(preset %in% c("replication", "main", "newPlaces"))
 P <- list(
-  replication = list(tag = "replication", regimes = "FutureUnseen,FutureTainted,Internal", plan = "", matchUnits = TRUE, routeHeld = FALSE, suffix = "_temporal", rankPerWindow = FALSE, arm = "main", complexity = "2,5,10,20,Inf"),
+  replication = list(tag = "replication", regimes = "FutureUnseen,FutureTainted,Internal", plan = "", matchUnits = TRUE, routeHeld = FALSE, suffix = "_temporal", rankPerWindow = FALSE, arm = "main", complexity = "2,5,10,20,Inf", unseenShare = 0.15, minTrainFrac = 0.5),
   # main REDEFINED 2026-10-31 (Tati: two-arm structure): NO spatial regimes in the same-animals arm, so no random cut to the smallest (buffered) pool and all splits / forecast years survive.
   # FutureUnseen (validation year with the animals still in training) is built as a by-product only; it is NOT in the training plan.
   main        = list(tag = "main", regimes = "FutureUnseen,FutureTainted,FutureUnseenGrouped,Internal",
-                     plan = "FutureTainted,FutureUnseenGrouped,Internal", matchUnits = TRUE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "main", complexity = "2,5,10,20,30"),
-  newPlaces   = list(tag = "newPlaces", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30"))[[preset]]
+                     plan = "FutureTainted,FutureUnseenGrouped,Internal", matchUnits = TRUE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "main", complexity = "2,5,10,20,30", unseenShare = 0.30, minTrainFrac = 0.5),
+  newPlaces   = list(tag = "newPlaces", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30", unseenShare = 0.15, minTrainFrac = 0.4))[[preset]]      # decisions of 2026-10-31: main 30% of the last-year strata as PreVal validation; new places minimum training share 0.4
 stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "rank", "train", "analyze", "all"))
 outPath <- envChr("PREVAL_OUT", "outputs/caribou_engine"); species <- "caribou"; speciesDir <- file.path(outPath, species)
 finalDir <- envChr("PREVAL_FINAL", speciesDir); runTag <- envChr("PREVAL_TAG", P$tag)
@@ -61,7 +62,8 @@ if (stage %in% c("design", "rank", "train", "analyze", "all")) {
       complexityLevels = envChr("PREVAL_COMPLEXITY", P$complexity), epoch = envNum("PREVAL_EPOCHS", 300), earlyStopPatience = envNum("PREVAL_PATIENCE", 10), nReplicates = envNum("PREVAL_REPLICATES", 1),
       useSavedPlan = Sys.getenv("PREVAL_NEW_PLAN") != "1", onlyMissing = Sys.getenv("PREVAL_ONLY_MISSING") == "1", runSlice = sliceTask, torchThreads = envNum("PREVAL_THREADS", 1),
       rankingFile = "featureTable.csv", runTag = runTag, planRegimes = envChr("PREVAL_PLANREGIMES", P$plan), regimes = envChr("PREVAL_REGIMES", P$regimes),
-      blockKm = envNum("PREVAL_BLOCKKM", 100), bufferKm = envNum("PREVAL_BUFFERKM", 10), nFolds = 4, minTrain = 500, minVal = 200, minTest = 200, minTrainFraction = envNum("PREVAL_MINTRAINFRAC", 0.5),
+      blockKm = envNum("PREVAL_BLOCKKM", 100), bufferKm = envNum("PREVAL_BUFFERKM", 10), nFolds = 4, minTrain = 500, minVal = 200, minTest = 200, minTrainFraction = envNum("PREVAL_MINTRAINFRAC", P$minTrainFrac), unseenValShare = envNum("PREVAL_UNSEENVALSHARE", P$unseenShare),
+      spatialTestShare = envNum("PREVAL_SPATIALTESTSHARE", 0.25), spatialValShare = envNum("PREVAL_SPATIALVALSHARE", 0.25),
       arm = envChr("PREVAL_ARM", P$arm), routeHeldOut = envLgl("PREVAL_ROUTEHELDOUT", P$routeHeld), matchUnits = envLgl("PREVAL_MATCHUNITS", P$matchUnits), splitSuffix = envChr("PREVAL_SPLITSUFFIX", P$suffix))))
   invisible(spades(sim))
 }

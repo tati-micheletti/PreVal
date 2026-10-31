@@ -19,7 +19,7 @@
 generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
                          nReplicates = 1L, firstForecastYear = -Inf, planRegimes = NULL, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL,
-                         arm = c("main", "spatialTest"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE, splitSuffix = "") {      # splitSuffix (2026-10-30): "_temporal" reproduces the split ids, and so the split and model seeds, of the old caribou design
+                         arm = c("main", "spatialTest"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE, splitSuffix = "", unseenValShare = 0.15) {      # splitSuffix (2026-10-30): "_temporal" reproduces the split ids, and so the split and model seeds, of the old caribou design
   arm <- match.arg(arm)      # spatialTest: the test cases lie in blocks no regime sees; regimes = SPATIALTEST_REGIMES (spatialTestSplits.R)
   # routeHeldOut (2026-10-27): also build FutureUnseenGrouped = PreVal validated on UNSEEN ROUTES (no spatial buffer); in the main arm it is added to the regimes, in the spatialTest arm it is passed on
   if (arm == "spatialTest") { regimes <- SPATIALTEST_REGIMES; if (minVal >= 100L) minVal <- 50L; if (minTrainFraction > 0.5) minTrainFraction <- 0.5 }
@@ -41,7 +41,7 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
     b <- if (arm == "spatialTest") buildSpatialTestSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testShare = spatialTestShare, valShare = spatialValShare,
                                                          minTrain = minTrain, minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, valYears = valYears, withRouteHeldOut = isTRUE(routeHeldOut))
          else buildRegimeSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testFraction = testFraction, minTrain = minTrain,
-                                minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, regimes = regimes, valYears = valYears, minValCombined = minValCombined, matchUnits = matchUnits)
+                                minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, regimes = regimes, valYears = valYears, minValCombined = minValCombined, matchUnits = matchUnits, unseenValShare = unseenValShare)
     if (!isTRUE(b$ok)) { skipped[[length(skipped) + 1L]] <- data.table::data.table(splitId = g$splitId, reason = b$reason); next }
     checks[[length(checks) + 1L]] <- if (arm == "spatialTest") verifySpatialTestSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)
                                       else verifyRegimeSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)

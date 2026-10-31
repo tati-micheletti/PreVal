@@ -46,6 +46,15 @@ check(bf$sizes[["nTrain"]] == bf$poolSizes[["FutureTainted"]] && bf$sizes[["nTra
 check(all(verifyRegimeSplits(idx, bf, 2008, 2014, 2015, "full", sp)$ok), "gates pass on the full-pool split, including the matched-Internal check")
 itu <- idx$unit[bf$splits$Internal$row[bf$splits$Internal$set != "test"]]; Upl <- idx$unit[which(idx$year >= 2008 & idx$year <= 2014)]
 check(all(itu %in% Upl), "matchUnits: Internal uses only units that are in the pool of years s..e")
+# validation share of PreVal on unseen units (unseenValShare, 2026-10-31): default 0.15 = the old behaviour, 0.30 doubles the validation set
+rg3 <- c("FutureUnseen", "FutureTainted", "FutureUnseenGrouped", "Internal")
+bd <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 123L, spatial = sp, regimes = rg3, matchUnits = TRUE)
+bd15 <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 123L, spatial = sp, regimes = rg3, matchUnits = TRUE, unseenValShare = 0.15)
+bd30 <- buildRegimeSplits(idx, s = 2008, e = 2014, testYear = 2015, seed = 123L, spatial = sp, regimes = rg3, matchUnits = TRUE, unseenValShare = 0.30)
+nV <- bd$sizes[["nVal"]]
+check(identical(bd$splits, bd15$splits) && bd$valSizes[["FutureUnseenGrouped"]] == max(10L, floor(0.15 * nV)), "unseenValShare: the default (0.15) gives the same splits as before the parameter existed")
+check(isTRUE(bd30$ok) && bd30$valSizes[["FutureUnseenGrouped"]] == max(10L, floor(0.30 * nV)) && bd30$valSizes[["FutureUnseenGrouped"]] > bd15$valSizes[["FutureUnseenGrouped"]], "unseenValShare 0.30: validation of PreVal on unseen units = 30% of the validation-year cases")
+check(all(verifyRegimeSplits(idx, bd30, 2008, 2014, 2015, "v30", sp)$ok) && bd30$sizes[["nTrain"]] <= bd15$sizes[["nTrain"]], "gates pass with a larger share; the common training size can only shrink")
 yrOf <- function(m, st) idx$year[m$row[m$set == st]]
 check(max(yrOf(b$splits$FutureUnseen, "train")) < min(yrOf(b$splits$FutureUnseen, "val")), "PreVal: validation strictly later than training")
 check(max(yrOf(b$splits$FutureTainted, "train")) >= min(yrOf(b$splits$FutureTainted, "val")), "status quo: validation years overlap training years")

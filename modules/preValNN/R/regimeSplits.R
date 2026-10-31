@@ -44,7 +44,7 @@ REGIMES <- c("FutureUnseen", "FutureTainted", "FutureTaintedGrouped", "FutureTai
 #' @param regimes subset of REGIMES to build (FutureUnseen is always built)
 buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFraction = 0.5,
                               minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8,
-                              regimes = REGIMES, valYears = 1L, minValCombined = 10L, matchUnits = FALSE) {      # production passes 50 (preValNN parameter minValCombined)
+                              regimes = REGIMES, valYears = 1L, minValCombined = 10L, matchUnits = FALSE, unseenValShare = 0.15) {      # unseenValShare (2026-10-31): validation size of FutureUnseenGrouped as a share of the validation-year cases when no PreVal + spatial regime sets it (default 0.15 = the value before the parameter existed)      # production passes 50 (preValNN parameter minValCombined)
   stopifnot(s <= e - valYears, e < testYear, valYears >= 1L)
   yr <- idx$year
   tp <- which(yr == testYear)
@@ -81,7 +81,7 @@ buildRegimeSplits <- function(idx, s, e, testYear, seed, spatial = NULL, testFra
   }
 
   if ("FutureUnseenGrouped" %in% regimes) {
-    mG <- if (!is.null(pools$FutureUnseenSpatial)) length(pools$FutureUnseenSpatial$val) else max(minValCombined, floor(0.15 * nVal))
+    mG <- if (!is.null(pools$FutureUnseenSpatial)) length(pools$FutureUnseenSpatial$val) else max(minValCombined, floor(unseenValShare * nVal))
     pg <- .pickGroups(valP, idx$unit, mG, seed + 50L)
     if (is.null(pg)) return(list(ok = FALSE, reason = "validation size larger than the validation years (unseen routes)"))
     pools$FutureUnseenGrouped <- list(train = trainP[!idx$unit[trainP] %in% pg$groups], val = pg$valRows)      # the held-out routes are absent from training in every year

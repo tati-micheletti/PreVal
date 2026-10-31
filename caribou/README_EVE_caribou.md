@@ -1,6 +1,6 @@
 # Caribou through the engine on EVE: order of commands (one step at a time)
 
-Arms (see `caribou/ANALYSIS_PLAN_CARIBOU_NN.md`, section 11): `replication` (acceptance arm, 1,800 models), `main` (same animals, 1,800 models), `newPlaces` (420 models at the minimum training share 0.5; the number changes if Tati lowers it).
+Arms (see `caribou/ANALYSIS_PLAN_CARIBOU_NN.md`, section 11): `replication` (acceptance arm, 1,800 models), `main` (same animals, 1,800 models), `newPlaces` (1,140 models: 57 splits at the minimum training share 0.4, 100 km blocks, 10 km buffer, forecast years 2016-2022). Decisions of 2026-10-31: PreVal validation = 30% of the last-year strata in the main arm (median 14 animals); new-places minimum training share 0.4. Expected md5: inputs 3544038c5418987e6f505cddf98f05b5, replication a19bed2f39d0d725c31f4ae8411bcce0, main 56d097a70613a1a30fe96081d385e8d7, newPlaces b5bd9a956b54baedf2849bd0c1e9b25d.
 Design and per-window rankings were made LOCALLY; EVE only trains and analyses. Caribou data cannot be disclosed: the archives contain the data table, keep the folders private.
 
 Local files (PC): `outputs/caribou_engine/upload/` with `caribou_inputs.tar.gz`, `caribou_replication.tar.gz`, `caribou_main.tar.gz`, `caribou_newPlaces.tar.gz` and `md5sums.txt`.
@@ -49,7 +49,7 @@ Suggestion from the model counts (the old second pass needed about 7 min per mod
 ```bash
 cd ~/projects/PreVal && PREVAL_PRESET=replication NTASKS=150 MAXPAR=25 bash eve/submit_caribou.sh all
 ```
-then `PREVAL_PRESET=main NTASKS=150 MAXPAR=25 ...`, then `PREVAL_PRESET=newPlaces NTASKS=40 MAXPAR=20 ...`.
+then `PREVAL_PRESET=main NTASKS=150 MAXPAR=25 ...`, then `PREVAL_PRESET=newPlaces NTASKS=60 MAXPAR=20 ...`.
 The script writes one settings file per submission, checks the plan, the rankings and the input files, and submits the training array and the analysis (the analysis waits for the training).
 
 ## 8. Check that everything finished (EVE terminal)
