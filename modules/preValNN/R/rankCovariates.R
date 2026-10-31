@@ -14,10 +14,10 @@
 #' ORDER in which covariates enter, identically for all regimes.
 #' @return data.table(Feature, group, Importance, ImportanceSD, marginalAssoc, rank) ordered by rank, with attributes baselineLoss and mode
 rankCovariates <- function(store, features, adapter, hyper, seed, mode = c("random", "forward"), rankYears = NULL, heldOutFraction = 0.2,
-                           trainFraction = 0.6, nRep = 5L, groupR = 0.9, device = "cpu", zClip = 10, earlyStopPatience = 15L, verbose = FALSE) {
+                           trainFraction = 0.6, nRep = 5L, groupR = 0.9, device = "cpu", zClip = 10, earlyStopPatience = 15L, verbose = FALSE, excludeUnits = NULL) {      # excludeUnits (2026-10-31): units (animals) whose cases never enter the ranking (new-animals arm); NULL = all, as before
   mode <- match.arg(mode)
   idx <- store$index; yr <- idx$year
-  pool <- if (is.null(rankYears)) seq_len(nrow(idx)) else which(yr %in% rankYears)
+  pool <- .rankPool(idx, rankYears, excludeUnits)
   if (mode == "random") {
     ho <- withSeed(seed, sample(pool, floor(heldOutFraction * length(pool))))
     trRows <- setdiff(pool, ho)
@@ -76,4 +76,11 @@ effectiveNumber <- function(X, var = 0.9) {
   X <- scale(as.matrix(X)); X[is.na(X)] <- 0
   ev <- stats::prcomp(X, center = FALSE, scale. = FALSE)$sdev^2
   which(cumsum(ev) / sum(ev) >= var)[1]
+}
+
+# rows the ranking is made on: the cases of `rankYears` (all years if NULL), without the cases of the units in `excludeUnits` (new-animals arm; NULL = nobody is excluded)
+.rankPool <- function(idx, rankYears = NULL, excludeUnits = NULL) {
+  pool <- if (is.null(rankYears)) seq_len(nrow(idx)) else which(idx$year %in% rankYears)
+  if (!is.null(excludeUnits)) pool <- pool[!as.character(idx$unit[pool]) %in% as.character(excludeUnits)]
+  pool
 }

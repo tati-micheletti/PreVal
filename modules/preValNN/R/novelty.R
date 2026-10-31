@@ -6,9 +6,9 @@
 #' case has ONE novelty value that does not depend on the regime. Per-case losses are the calibrated ones (lossCal).
 # Labels since 2026-10-30: "PreVal" = FutureUnseenGrouped (validation on the last year AND on unseen units); the old FutureUnseen (units still in training) is "FutureOnly".
 # Novelty tables written before that date (birds runs of 2026-10-26) use the old labels: "PreVal" there = FutureUnseen, "PreValRoutes" = FutureUnseenGrouped.
-NOVELTY_LABELS <- c(FutureUnseen = "FutureOnly", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial", FutureUnseenGrouped = "PreVal")
+NOVELTY_LABELS <- c(FutureUnseen = "FutureOnly", FutureTainted = "StatusQuo", FutureTaintedSpatial = "Spatial", FutureUnseenSpatial = "PreValSpatial", FutureUnseenGrouped = "PreVal", FutureTaintedGrouped = "AnimalCV")
 NOVELTY_PAIRS <- list(c("PreVal", "StatusQuo"), c("Spatial", "StatusQuo"), c("PreVal", "Spatial"), c("PreValSpatial", "Spatial"), c("PreValSpatial", "StatusQuo"),
-                      c("PreVal", "FutureOnly"), c("PreValSpatial", "PreVal"), c("FutureOnly", "StatusQuo"), c("PreValSpatial", "FutureOnly"))
+                      c("PreVal", "FutureOnly"), c("PreValSpatial", "PreVal"), c("FutureOnly", "StatusQuo"), c("PreValSpatial", "FutureOnly"), c("PreVal", "AnimalCV"), c("AnimalCV", "StatusQuo"))
 
 #' @param Zref,Ztest standardised and importance-weighted covariate matrices (reference cases, test cases)
 #' @param nSample number of reference cases (random, seeded) used to estimate the mean nearest-neighbour distance among reference cases (leave-one-out)

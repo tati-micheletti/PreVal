@@ -6,7 +6,7 @@
 #   PREVAL_STAGE      stage (default all)
 #   PREVAL_OUT        output root (default outputs/caribou_engine); results go to <out>/caribou/run<tag>
 #   PREVAL_FINAL      folder with final_caribou.rds (written by the prep stage into <out>/caribou if empty)
-#   PREVAL_PRESET     replication | main | newPlaces | newPlaces25 (new places with 25 km blocks and a 5 km buffer, sensitivity design B). Sets the defaults below (any explicit variable wins):
+#   PREVAL_PRESET     replication | main | newPlaces | newPlaces25 | newAnimals (new animals: test strata of held-out animals only, see plan section 14) (new places with 25 km blocks and a 5 km buffer, sensitivity design B). Sets the defaults below (any explicit variable wins):
 #       replication   the OLD design as it was: regimes FutureUnseen, FutureTainted, Internal (matched on animals), full pools, split ids with suffix _temporal (same split and model seeds),
 #                     the old global ranking (no per-window ranking), levels 2,5,10,20,Inf (the second pass). Tag "replication". The acceptance arm: it must reproduce the old numbers up to float noise.
 #       main          same animals, new design (2026-10-31): PreVal (FutureUnseenGrouped), status quo, Internal (matched on animals); NO spatial regimes; per-window ranking on the training years only; levels 2,5,10,20,30.
@@ -26,7 +26,7 @@ if (nzchar(Sys.getenv("SLURM_JOB_ID"))) {          # cluster job: only add the p
 envNum <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) as.numeric(v) else default }
 envChr <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v else default }
 envLgl <- function(name, default) { v <- Sys.getenv(name, ""); if (nzchar(v)) v %in% c("1", "TRUE", "true") else default }
-preset <- envChr("PREVAL_PRESET", "main"); stopifnot(preset %in% c("replication", "main", "newPlaces", "newPlaces25"))
+preset <- envChr("PREVAL_PRESET", "main"); stopifnot(preset %in% c("replication", "main", "newPlaces", "newPlaces25", "newAnimals"))
 P <- list(
   replication = list(tag = "replication", regimes = "FutureUnseen,FutureTainted,Internal", plan = "", matchUnits = TRUE, routeHeld = FALSE, suffix = "_temporal", rankPerWindow = FALSE, arm = "main", complexity = "2,5,10,20,Inf", unseenShare = 0.15, minTrainFrac = 0.5),
   # main REDEFINED 2026-10-31 (Tati: two-arm structure): NO spatial regimes in the same-animals arm, so no random cut to the smallest (buffered) pool and all splits / forecast years survive.
@@ -35,7 +35,10 @@ P <- list(
                      plan = "FutureTainted,FutureUnseenGrouped,Internal", matchUnits = TRUE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "main", complexity = "2,5,10,20,30", unseenShare = 0.30, minTrainFrac = 0.5),
   newPlaces   = list(tag = "newPlaces", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30", unseenShare = 0.15, minTrainFrac = 0.4),
   # newPlaces25 (2026-10-31, sensitivity design B): the same new-places arm with 25 km blocks and a 5 km buffer (the 100 km / 10 km of newPlaces is design A, the primary one)
-  newPlaces25 = list(tag = "newPlaces25", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30", unseenShare = 0.15, minTrainFrac = 0.4, blockKm = 25, bufferKm = 5))[[preset]]      # decisions of 2026-10-31: main 30% of the last-year strata as PreVal validation; new places minimum training share 0.4
+  newPlaces25 = list(tag = "newPlaces25", regimes = "FutureUnseen,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,Internal", plan = "FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial,FutureUnseenGrouped", matchUnits = FALSE, routeHeld = TRUE, suffix = "", rankPerWindow = TRUE, arm = "spatialTest", complexity = "2,5,10,20,30", unseenShare = 0.15, minTrainFrac = 0.4, blockKm = 25, bufferKm = 5),
+  # newAnimals (2026-10-31): test strata = forecast-year strata of held-out ANIMALS (one seeded fold of 4 per window), absent from every pool of every regime in every year; no spatial blocks.
+  # PreVal (30% validation share), status quo, animal-grouped CV. Per-window rankings are recomputed WITHOUT the held-out animals (PREVAL_RANKFROM must stay empty).
+  newAnimals  = list(tag = "newAnimals", regimes = "FutureUnseenGrouped,FutureTainted,FutureTaintedGrouped", plan = "FutureUnseenGrouped,FutureTainted,FutureTaintedGrouped", matchUnits = FALSE, routeHeld = FALSE, suffix = "", rankPerWindow = TRUE, arm = "newAnimals", complexity = "2,5,10,20,30", unseenShare = 0.30, minTrainFrac = 0.4))[[preset]]      # decisions of 2026-10-31: main 30% of the last-year strata as PreVal validation; new places minimum training share 0.4
 if (is.null(P$blockKm)) P$blockKm <- 100; if (is.null(P$bufferKm)) P$bufferKm <- 10      # blocks and buffer of the spatial regimes (new-places designs A: 100 / 10, B: 25 / 5)
 stage <- envChr("PREVAL_STAGE", "all"); stopifnot(stage %in% c("prep", "design", "rank", "train", "analyze", "all"))
 outPath <- envChr("PREVAL_OUT", "outputs/caribou_engine"); species <- "caribou"; speciesDir <- file.path(outPath, species)

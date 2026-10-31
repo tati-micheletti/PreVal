@@ -19,10 +19,12 @@
 generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears = 1L, horizons = 1L, covariateLevels = c(2, 5, 10, 15, 25, 35, 50, Inf),
                          nReplicates = 1L, firstForecastYear = -Inf, planRegimes = NULL, testFraction = 0.5, blockKm = 100, bufferKm = 10, nFolds = 4L, regimes = REGIMES,
                          minTrain = 200L, minVal = 100L, minTest = 100L, minTrainFraction = 0.8, registryPath = NULL,
-                         arm = c("main", "spatialTest"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE, splitSuffix = "", unseenValShare = 0.15) {      # splitSuffix (2026-10-30): "_temporal" reproduces the split ids, and so the split and model seeds, of the old caribou design
+                         arm = c("main", "spatialTest", "newAnimals"), spatialTestShare = 0.25, spatialValShare = 0.25, minValCombined = 10L, routeHeldOut = FALSE, matchUnits = FALSE, splitSuffix = "", unseenValShare = 0.15) {      # splitSuffix (2026-10-30): "_temporal" reproduces the split ids, and so the split and model seeds, of the old caribou design
   arm <- match.arg(arm)      # spatialTest: the test cases lie in blocks no regime sees; regimes = SPATIALTEST_REGIMES (spatialTestSplits.R)
   # routeHeldOut (2026-10-27): also build FutureUnseenGrouped = PreVal validated on UNSEEN ROUTES (no spatial buffer); in the main arm it is added to the regimes, in the spatialTest arm it is passed on
-  if (arm == "spatialTest") { regimes <- SPATIALTEST_REGIMES; if (minVal >= 100L) minVal <- 50L; if (minTrainFraction > 0.5) minTrainFraction <- 0.5 }
+  # newAnimals (2026-10-31, caribou): the test strata are of held-out ANIMALS that no regime trains or validates on in any year; regimes = NEWANIMALS_REGIMES (newAnimalsSplits.R); unseenValShare is its validation share
+  if (arm == "newAnimals") regimes <- NEWANIMALS_REGIMES
+  else if (arm == "spatialTest") { regimes <- SPATIALTEST_REGIMES; if (minVal >= 100L) minVal <- 50L; if (minTrainFraction > 0.5) minTrainFraction <- 0.5 }
   else if (isTRUE(routeHeldOut)) regimes <- union(regimes, "FutureUnseenGrouped") else regimes <- setdiff(regimes, "FutureUnseenGrouped")
   spatialSeed <- stringSeed("spatialBlocks")
   spatial <- assignBlocks(idx, blockKm = blockKm, bufferKm = bufferKm, nFolds = nFolds, seed = spatialSeed)
@@ -38,12 +40,14 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
   bundles <- list(); checks <- list(); summaries <- list(); skipped <- list()
   for (i in seq_len(nrow(grid))) {
     g <- grid[i]
-    b <- if (arm == "spatialTest") buildSpatialTestSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testShare = spatialTestShare, valShare = spatialValShare,
+    b <- if (arm == "newAnimals") buildNewAnimalsSplits(idx, g$s, g$e, g$testYear, g$splitSeed, valShare = unseenValShare, minTrain = minTrain, minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, valYears = valYears, nFolds = nFolds)
+         else if (arm == "spatialTest") buildSpatialTestSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testShare = spatialTestShare, valShare = spatialValShare,
                                                          minTrain = minTrain, minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, valYears = valYears, withRouteHeldOut = isTRUE(routeHeldOut))
          else buildRegimeSplits(idx, g$s, g$e, g$testYear, g$splitSeed, spatial = spatial, testFraction = testFraction, minTrain = minTrain,
                                 minVal = minVal, minTest = minTest, minTrainFraction = minTrainFraction, regimes = regimes, valYears = valYears, minValCombined = minValCombined, matchUnits = matchUnits, unseenValShare = unseenValShare)
     if (!isTRUE(b$ok)) { skipped[[length(skipped) + 1L]] <- data.table::data.table(splitId = g$splitId, reason = b$reason); next }
-    checks[[length(checks) + 1L]] <- if (arm == "spatialTest") verifySpatialTestSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)
+    checks[[length(checks) + 1L]] <- if (arm == "newAnimals") verifyNewAnimalsSplits(idx, b, g$s, g$e, g$testYear, g$splitId, valYears = valYears, nFolds = nFolds)
+                                      else if (arm == "spatialTest") verifySpatialTestSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)
                                       else verifyRegimeSplits(idx, b, g$s, g$e, g$testYear, g$splitId, spatial = spatial, valYears = valYears)
     summaries[[length(summaries) + 1L]] <- data.table::rbindlist(lapply(names(b$splits), function(rg) summariseRegimeSplit(idx, b$splits[[rg]], g$splitId, rg)))
     bundles[[g$splitId]] <- b
@@ -102,6 +106,9 @@ auditManifests <- function(idx, plan, manifestDir, spatial, matchUnits = FALSE) 
     splits <- stats::setNames(lapply(rgs, function(rg) readManifest(manifestDir, sid, rg)[, .(row, set)]), rgs)
     sv <- if ("FutureTaintedSpatial" %in% rgs) unique(spatial$key[splits$FutureTaintedSpatial[set == "val"]$row]) else NULL
     v <- if (!is.null(p$valYears) && !is.na(p$valYears)) p$valYears else 1L
+    if (identical(p$arm, "newAnimals")) {            # new-animals arm: its own gates (the test strata are of held-out animals)
+      out[[sid]] <- verifyNewAnimalsSplits(idx, list(ok = TRUE, splits = splits, valYears = v), p$windowStart, p$historyEnd, p$testYear, sid, valYears = v); next
+    }
     if (identical(p$arm, "spatialTest")) {            # (also holds when FutureUnseenGrouped is present)            # spatial-test arm: its own gates (the pool is not a plain window, the test cases are in new places)
       out[[sid]] <- verifySpatialTestSplits(idx, list(ok = TRUE, splits = splits, valYears = v), p$windowStart, p$historyEnd, p$testYear, sid, spatial = spatial, valYears = v); next
     }

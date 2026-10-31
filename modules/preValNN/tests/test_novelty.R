@@ -22,7 +22,7 @@ tab <- rbindlist(lapply(years, function(yy) { u <- units[runif(nUnit) < 0.7]; u[
 tab[, `:=`(n1 = rnorm(.N), n2 = rnorm(.N), n3 = rnorm(.N))]; tab[, count := rnbinom(.N, mu = exp(0.4 + 0.6 * a - 0.4 * b), size = 2)]
 feats <- c("a", "b", "n1", "n2", "n3"); tab <- tab[, c("SITE_ID", "year", "x", "y", feats, "count"), with = FALSE]; idx <- buildCaseIndex(tab)
 pl <- generatePlan(idx, startYear = 2005, endYear = 2016, minTrainYears = 4, horizons = 1, covariateLevels = c(2, 4), blockKm = 100, bufferKm = 10, minTrain = 100, minVal = 50, minTest = 50,
-                   minTrainFraction = 0.5, minValCombined = 10)
+                   minTrainFraction = 0.5, minValCombined = 10, regimes = c("FutureUnseen", "FutureTainted", "FutureTaintedSpatial", "FutureUnseenSpatial", "Internal"))      # the regimes of the real birds runs (the animal-grouped CV has its own label, AnimalCV, in the new-animals arm only)
 sel <- unique(pl$plan$splitId)[1:2]; plan <- pl$plan[splitId %in% sel]
 runDir <- file.path(tempdir(), "novrun"); dir.create(file.path(runDir, "testedModels"), recursive = TRUE, showWarnings = FALSE); dir.create(file.path(runDir, "rankings"), showWarnings = FALSE)
 writeManifests(pl$bundles[sel], file.path(runDir, "splits")); data.table::fwrite(plan, file.path(runDir, "experimentPlan.csv")); saveRDS(idx, file.path(runDir, "caseIndex.rds"))

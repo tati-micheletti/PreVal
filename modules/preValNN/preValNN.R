@@ -157,7 +157,8 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         if (isRefit) stop("Refit run: the base run has no ranking for window ", s, "-", e, " (", src, "); run the rank stage of the base run first.")
         if (is.null(store)) store <- buildCaseStore(tab, idx, feats, P(sim)$response, layout = P(sim)$dataLayout)
         message(sprintf("ranking window %d-%d on training years %s (%d of %d in this process)", s, e, yrs, i, nrow(win)))
-        r <- rankCovariates(store, feats, adapter, hyper, seed = stringSeed(paste("rankWindow", s, e, v)), mode = "random", rankYears = s:(e - v),
+        exU <- if (identical(P(sim)$arm, "newAnimals")) newAnimalsHeldOut(idx, s, e) else NULL      # new-animals arm: the held-out animals of the window never enter the ranking
+        r <- rankCovariates(store, feats, adapter, hyper, seed = stringSeed(paste("rankWindow", s, e, v)), mode = "random", rankYears = s:(e - v), excludeUnits = exU,
                             nRep = P(sim)$nRepImportance, groupR = P(sim)$groupR, device = device, zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience)
         r[, `:=`(windowStart = s, historyEnd = e, valYears = v, rankYears = yrs)]; data.table::fwrite(r, f); nDone <- nDone + 1L; gc(verbose = FALSE)
       }
@@ -214,9 +215,10 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       dp <- readRDS(file.path(outDir, "designParams.rds")); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       au <- auditManifests(idx, plan, file.path(outDir, "splits"), dp$spatial, matchUnits = isTRUE(P(sim)$matchUnits)); data.table::fwrite(au, file.path(outDir, "splitChecks_final.csv"))
       rk <- data.table::fread(file.path(root, P(sim)$rankingFile))
+      exRg <- if (identical(P(sim)$arm, "newAnimals")) character(0) else "FutureTaintedGrouped"      # the animal-grouped CV is a comparison regime of the new-animals arm only
       pl <- P(sim)$primaryLoss      # birds: 'calibrated' primary (dispersion re-estimated on each regime's validation cases), 'fitted' sensitivity (folder analysis_fittedTheta); caribou: 'fitted' = RAW loss primary, calibrated next to it (analysis_calibrated)
-      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk), lossType = pl)
-      analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, if (pl == "calibrated") "analysis_fittedTheta" else "analysis_calibrated"), nCovariatesAll = nrow(rk), lossType = if (pl == "calibrated") "fitted" else "calibrated")
+      sim$modelComparisons <- analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, "analysis"), nCovariatesAll = nrow(rk), lossType = pl, excludeRegimes = exRg)
+      analyzeRegimes(file.path(outDir, "testedModels"), file.path(outDir, if (pl == "calibrated") "analysis_fittedTheta" else "analysis_calibrated"), nCovariatesAll = nrow(rk), lossType = if (pl == "calibrated") "fitted" else "calibrated", excludeRegimes = exRg)
       tab <- data.table::as.data.table(sim$finalTable)
       cs <- if (identical(P(sim)$dataLayout, "strata")) NULL else coefficientStability(tab[tab[[P(sim)$yearCol]] <= P(sim)$endYear], P(sim)$response, featuresForLevel(rk, 10), P(sim)$yearCol)
       if (!is.null(cs)) data.table::fwrite(cs, file.path(outDir, "analysis", "coefficientStability_top10.csv"))

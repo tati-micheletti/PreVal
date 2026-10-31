@@ -6,7 +6,7 @@
 # Run from the repo root:  Rscript caribou/newplaces_animal_overlap.R      (writes caribou/newplaces_animal_overlap.csv and prints the summaries)
 suppressMessages(library(data.table))
 root <- "outputs/caribou_engine/caribou"
-designs <- c(A_100km_10km = "run_newPlaces", B_25km_5km = "run_newPlaces25")
+designs <- c(A_100km_10km = "run_newPlaces", B_25km_5km = "run_newPlaces25", C_newAnimals = "run_newAnimals")      # C = the new-animals arm (2026-10-31): the share must be exactly 0 for every regime
 res <- list()
 for (dn in names(designs)) {
   d <- file.path(root, designs[[dn]]); if (!dir.exists(d)) { message("missing: ", d); next }
@@ -16,7 +16,7 @@ for (dn in names(designs)) {
     sid <- grid$splitId[i]; fs <- list.files(file.path(d, "splits"), pattern = paste0("^", sid, "__.*[.]rds$"), full.names = TRUE)
     for (f in fs) {
       rg <- sub(paste0("^", sid, "__(.*)[.]rds$"), "\\1", basename(f)); m <- as.data.table(readRDS(f))
-      if (!rg %in% c("FutureUnseenGrouped", "FutureTainted", "FutureTaintedSpatial", "FutureUnseenSpatial")) next
+      if (!rg %in% c("FutureUnseenGrouped", "FutureTainted", "FutureTaintedSpatial", "FutureUnseenSpatial", "FutureTaintedGrouped")) next
       te <- idx$unit[m[set == "test"]$row]; tr <- unique(idx$unit[m[set == "train"]$row]); va <- unique(idx$unit[m[set == "val"]$row])
       res[[length(res) + 1L]] <- data.table(design = dn, splitId = sid, testYear = grid$testYear[i], horizon = grid$horizon[i], regime = rg, nTestStrata = length(te), nTestAnimals = uniqueN(te),
                                             shareStrataInTraining = mean(te %in% tr), shareAnimalsInTraining = mean(unique(te) %in% tr), shareStrataInTrainOrVal = mean(te %in% c(tr, va)))
@@ -24,7 +24,7 @@ for (dn in names(designs)) {
   }
 }
 R <- rbindlist(res); fwrite(R, "caribou/newplaces_animal_overlap.csv")
-label <- c(FutureUnseenGrouped = "PreVal", FutureTainted = "StatusQuo", FutureTaintedSpatial = "SpatialCV", FutureUnseenSpatial = "PreVal+Spatial"); R[, regime := label[regime]]
+label <- c(FutureUnseenGrouped = "PreVal", FutureTainted = "StatusQuo", FutureTaintedSpatial = "SpatialCV", FutureUnseenSpatial = "PreVal+Spatial", FutureTaintedGrouped = "AnimalCV"); R[, regime := label[regime]]
 cat("\n== Share of test strata whose animal is also in the regime's TRAINING set (median and range over splits) ==\n")
 print(R[, .(splits = .N, median = round(median(shareStrataInTraining), 3), min = round(min(shareStrataInTraining), 3), max = round(max(shareStrataInTraining), 3)), by = .(design, regime)])
 cat("\n== Share of test ANIMALS that are also in the training set ==\n")

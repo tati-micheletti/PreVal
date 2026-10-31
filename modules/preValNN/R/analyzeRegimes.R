@@ -76,7 +76,9 @@ analyzeRegimes <- function(modelDir, outDir, nCovariatesAll, margin = 0.005, exc
   # PreVal on unseen routes (validation routes absent from training in every year)
   contrast("P7_PreValRoutes_minus_PreVal", "FutureUnseenGrouped", "FutureUnseen"); contrast("P7_PreValRoutes_minus_Tainted", "FutureUnseenGrouped", "FutureTainted")
   contrast("P7_PreValRoutes_minus_Spatial", "FutureUnseenGrouped", "FutureTaintedSpatial"); contrast("P7_PreValRoutes_minus_Combined", "FutureUnseenGrouped", "FutureUnseenSpatial")
-  cn <- grep("^(H1|H2|P3|P4|P6|P7)_", names(W), value = TRUE)
+  # new-animals arm: PreVal (validation on the future AND on unseen animals) against the animal-grouped CV, which differs from the status quo only in validating on whole animals
+  contrast("P8_PreVal_minus_AnimalCV", "FutureUnseenGrouped", "FutureTaintedGrouped"); contrast("P8_AnimalCV_minus_Tainted", "FutureTaintedGrouped", "FutureTainted")
+  cn <- grep("^(H1|H2|P3|P4|P6|P7|P8)_", names(W), value = TRUE)
   data.table::fwrite(W, file.path(outDir, "pairedContrasts_perSplit.csv"))
   if (!length(cn)) { message("analyzeRegimes: none of the standard regime contrasts is available in this run; writing the model table only."); return(invisible(out)) }
   Wl <- data.table::melt(W, id.vars = id, measure.vars = cn, variable.name = "contrast", value.name = "diff")
