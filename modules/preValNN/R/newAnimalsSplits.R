@@ -13,7 +13,8 @@
 #'  3. Regimes (the SAME validation size m and the same training size):
 #'     * FutureUnseenGrouped   PreVal: validation = last-year strata of whole animals (random order until m strata; the last animal trimmed); those animals are absent from training in every year;
 #'     * FutureTainted         status quo: U' re-allocated at random, validation = m strata;
-#'     * FutureTaintedGrouped  animal-grouped CV: validation = whole animals of U' (all years, random order until m strata; the last animal trimmed), training excludes ALL strata of those animals.
+#'     * FutureTaintedGrouped  animal-grouped CV: validation = as many whole animals of U' as PreVal validates on (same NUMBER of animals, random draw), with all their strata in all years; training excludes ALL strata of those animals.
+#'                             Its validation therefore has a DIFFERENT number of strata than m, larger or smaller depending on which animals are drawn (training and test sizes are equal in all regimes; PreVal and status quo validate on m strata).
 #'  4. EQUAL TRAINING SIZE by random subsampling to the smallest training pool (as in the other designs); splits where that leaves less than minTrainFraction of the status-quo pool are skipped.
 NEWANIMALS_REGIMES <- c("FutureUnseenGrouped", "FutureTainted", "FutureTaintedGrouped")
 
@@ -37,8 +38,10 @@ buildNewAnimalsSplits <- function(idx, s, e, testYear, seed, valShare = 0.30, mi
   pg <- .pickGroups(valP, idx$unit, m, seed + 50L); if (is.null(pg)) return(list(ok = FALSE, reason = "validation size larger than the validation years (unseen animals)"))
   pools$FutureUnseenGrouped <- list(train = trainP[!idx$unit[trainP] %in% pg$groups], val = pg$valRows)
   perm <- withSeed(seed + 2L, sample(U)); pools$FutureTainted <- list(train = perm[(m + 1L):length(perm)], val = perm[seq_len(m)])
-  pk <- .pickGroups(U, idx$unit, m, seed + 10L); if (is.null(pk)) return(list(ok = FALSE, reason = "validation size larger than the pool (animal-grouped CV)"))
-  pools$FutureTaintedGrouped <- list(train = U[!idx$unit[U] %in% pk$groups], val = pk$valRows)
+  # animal-grouped CV (2026-10-31, Tati: equal number of validation ANIMALS): as many whole animals as PreVal validates on, with ALL their strata of U (so its number of validation strata differs from m, up or down)
+  nA <- length(pg$groups); animalsU <- unique(idx$unit[U]); if (length(animalsU) <= nA) return(list(ok = FALSE, reason = "fewer animals than PreVal's validation animals (animal-grouped CV)"))
+  vk <- withSeed(seed + 10L, sample(animalsU, nA))
+  pools$FutureTaintedGrouped <- list(train = U[!idx$unit[U] %in% vk], val = sort(U[idx$unit[U] %in% vk]))
   poolSizes <- vapply(pools, function(p) length(p$train), numeric(1)); nEq <- min(poolSizes)
   if (nEq < minTrain) return(list(ok = FALSE, reason = sprintf("training too small after grouping (%d)", nEq)))
   if (nEq < minTrainFraction * poolSizes[["FutureTainted"]]) return(list(ok = FALSE, reason = sprintf("blocking leaves only %d of %d status-quo training cases", nEq, poolSizes[["FutureTainted"]])))
@@ -67,7 +70,11 @@ verifyNewAnimalsSplits <- function(idx, bundle, s, e, testYear, splitId, valYear
   tests <- lapply(sp, rowsOf, st = "test")
   add("N2 test set identical across regimes and entirely in the forecast year", all(vapply(tests, function(t) identical(sort(t), sort(tests[[1]])), logical(1))) && all(yr[tests[[1]]] == testYear))
   sz <- vapply(sp, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")), numeric(3))
-  add("N2 equal train/val/test sizes across regimes", all(apply(sz, 1, function(v) length(unique(v)) == 1)), paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
+  szEq <- sz[, colnames(sz) != "FutureTaintedGrouped", drop = FALSE]      # the animal-grouped CV validates on whole animals: its validation has a different number of strata (see N6)
+  add("N2 equal train/val/test sizes across regimes (animal-grouped CV: train and test only)", all(apply(szEq, 1, function(v) length(unique(v)) == 1)) && length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1, paste(apply(sz, 2, paste, collapse = "/"), collapse = " | "))
+  if (all(c("FutureUnseenGrouped", "FutureTaintedGrouped") %in% names(sp)))
+    add("N6 animal-grouped CV validates on the same NUMBER of animals as PreVal", length(unique(as.character(idx$unit[rowsOf(sp$FutureTaintedGrouped, "val")]))) == length(unique(as.character(idx$unit[rowsOf(sp$FutureUnseenGrouped, "val")]))),
+        paste(length(unique(as.character(idx$unit[rowsOf(sp$FutureTaintedGrouped, "val")]))), "vs", length(unique(as.character(idx$unit[rowsOf(sp$FutureUnseenGrouped, "val")])))))
   held <- newAnimalsHeldOut(idx, s, e, nFolds); u <- function(r) as.character(idx$unit[r])
   add("N3 every test stratum belongs to a held-out animal of the window", all(u(tests[[1]]) %in% held))
   for (rg in names(sp)) add(sprintf("N3 %s: no training/validation stratum of a held-out animal (any year)", rg), !any(u(c(rowsOf(sp[[rg]], "train"), rowsOf(sp[[rg]], "val"))) %in% held))

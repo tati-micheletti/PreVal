@@ -32,7 +32,11 @@ check(!any(leak) && all(tu %in% b1$heldAnimals) && all(idx$year[b1$splits$Future
 # the animals are new in every YEAR, also before the window: the pools hold no stratum of a held-out animal at all
 check(!any(vapply(NEWANIMALS_REGIMES, function(rg) any(idx$unit[c(b1$splits[[rg]][set != "test"]$row)] %in% b1$heldAnimals), logical(1))), "no stratum of a held-out animal (any year) is in any pool")
 sz <- vapply(b1$splits, function(m) c(sum(m$set == "train"), sum(m$set == "val"), sum(m$set == "test")), numeric(3))
-check(all(apply(sz, 1, function(r) length(unique(r)) == 1)) && sz[2, 1] == b1$sizes[["nVal"]], sprintf("equal training, validation and test size in all three regimes (%s)", paste(sz[, 1], collapse = "/")))
+check(length(unique(sz[1, ])) == 1 && length(unique(sz[3, ])) == 1 && sz[2, "FutureTainted"] == sz[2, "FutureUnseenGrouped"] && sz[2, "FutureUnseenGrouped"] == b1$sizes[["nVal"]],
+      sprintf("equal training and test size in all three regimes; PreVal and status quo equal validation size, the animal-grouped CV has its own (%s)", paste(apply(sz, 2, paste, collapse = "/"), collapse = " | ")))
+nAn <- function(rg) length(unique(un(b1, rg, "val")))
+check(nAn("FutureTaintedGrouped") == nAn("FutureUnseenGrouped"), sprintf("animal-grouped CV validates on the same number of animals as PreVal (%d)", nAn("FutureUnseenGrouped")))
+check(all(v1[grepl("^N6", check)]$ok) && nrow(v1[grepl("^N6", check)]) == 1L, "gate N6 (same number of validation animals) is part of the checks and passes")
 pv <- b1$splits$FutureUnseenGrouped; gc <- b1$splits$FutureTaintedGrouped
 check(!length(intersect(un(b1, "FutureUnseenGrouped", "train"), un(b1, "FutureUnseenGrouped", "val"))) && all(idx$year[pv[set == "val"]$row] == 2012) && max(idx$year[pv[set == "train"]$row]) <= 2011,
       "PreVal: validation = last-year strata of animals absent from training in every year; training = earlier years")
@@ -59,5 +63,5 @@ check(nrow(pl$plan) > 0 && setequal(unique(pl$plan$typeValidation), NEWANIMALS_R
 dir <- file.path(tempdir(), "na"); dir.create(dir); writeManifests(pl$bundles, dir)
 au <- auditManifests(idx, pl$plan, dir, pl$spatial)
 check(all(au$ok) && any(grepl("^N3", au$check)), "the post-hoc audit of the manifests uses the new-animals gates and passes")
-check(all(vapply(pl$bundles, function(b) all(b$valSizes == b$valSizes[1]), logical(1))), "plan: validation size is the same in the three regimes of every split")
+check(all(vapply(pl$bundles, function(b) b$valSizes[["FutureTainted"]] == b$valSizes[["FutureUnseenGrouped"]], logical(1))) && all(pl$plan[typeValidation == "FutureTaintedGrouped"]$nValS > 0), "plan: PreVal and status quo have the same validation size in every split, the animal-grouped CV its own")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)
