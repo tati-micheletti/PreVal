@@ -24,7 +24,9 @@ export PREVAL_DATASET="${PREVAL_DATASET:-caribou}"
 export PREVAL_DATA_ROOT="${PREVAL_DATA_ROOT:-/data/birds/PreVal}"
 export PREVAL_ROOT="${PREVAL_ROOT:-$HOME/projects/PreVal}"                    # code (git clone), in /home
 export PREVAL_TABLE="${PREVAL_TABLE:-${PREVAL_DATA_ROOT}/${PREVAL_DATASET}/data/extractedFeatures_498a1edc8c19988e843def7542411d3e_2007_2022.csv}"
-export PREVAL_OUT="${PREVAL_OUT:-${PREVAL_DATA_ROOT}/${PREVAL_DATASET}/outputs/refit}"
+if [ "${PREVAL_DATASET}" != "caribouNN" ]; then      # caribouNN sets its own default below (2026-11-01: this line used to give it .../caribouNN/outputs/refit, so the first caribou-engine tests on EVE failed to find final_caribou.rds)
+  export PREVAL_OUT="${PREVAL_OUT:-${PREVAL_DATA_ROOT}/${PREVAL_DATASET}/outputs/refit}"
+fi
 # REFIT (birds): same jobs, other script and data folder. Final tables (final_<species>.rds, private) live in ${PREVAL_DATA_ROOT}/birds/data.
 if [ "${PREVAL_DATASET}" = "birds" ]; then
   export PREVAL_SCRIPT="${PREVAL_SCRIPT:-birds/runMe_birds.R}"

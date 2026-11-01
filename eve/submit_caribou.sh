@@ -10,6 +10,7 @@ MODE="${1:-}"; [ "${MODE}" = "test" ] || [ "${MODE}" = "all" ] || { echo "usage:
 : "${PREVAL_PRESET:?set PREVAL_PRESET to replication, main, newPlaces, newPlaces25 or newAnimals}"
 export PREVAL_DATASET=caribouNN
 OUTROOT="${PREVAL_OUT:-/data/birds/PreVal/caribou/outputs/engine}"
+export PREVAL_OUT="${OUTROOT}"      # handed to every job through the settings file, so the jobs read the same folder this script checked
 TAG="${PREVAL_TAG:-${PREVAL_PRESET}}"
 RUN="${OUTROOT}/caribou/run_${TAG}"
 for f in "${RUN}/experimentPlan.csv" "${OUTROOT}/caribou/networkSettings.rds" "${OUTROOT}/caribou/featureTable.csv" "${OUTROOT}/caribou/final_caribou.rds"; do
