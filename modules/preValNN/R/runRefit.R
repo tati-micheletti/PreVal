@@ -24,7 +24,7 @@ fitFixedEpochs <- function(adapter, hyper, tr, nUnits, seed, lrSchedule, device 
     for (a in seq(1L, n, by = batchSize)) {
       z <- min(a + batchSize - 1L, n); ii <- perm[a:z]
       opt$zero_grad()
-      loss <- adapter$caseLoss(net(tr$x[ii, ], tr$id[ii]), tr$y[ii], net)$mean()
+      loss <- adapter$caseLoss(net(.rowsOf(tr$x, ii), .take(tr$id, ii)), .take(tr$y, ii), net)$mean()      # .rowsOf/.take (fitNet.R) keep the batch dimension when ii holds one index
       loss$backward(); opt$step()
     }
   }

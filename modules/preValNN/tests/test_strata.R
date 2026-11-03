@@ -94,4 +94,12 @@ fwrite(plan, file.path(dir, "experimentPlan.csv"))
 Xc <- as.matrix(as.array(store$X$mean(dim = 2L))); colnames(Xc) <- feats
 cs <- suppressWarnings(noveltyCases(dir, NULL, levels = c(2, 6), nSample = 200L, verbose = FALSE, refRegime = "FutureUnseenGrouped", Xcases = Xc))
 check(nrow(cs) > 0 && all(is.finite(cs$DI)) && all(cs$DI >= 0) && all(is.finite(cs$lossCal)) && setequal(unique(cs$regime), c("PreVal", "StatusQuo")), sprintf("novelty on strata: %d test-case rows, DI finite, reference = PreVal on unseen animals", nrow(cs)))
+# ---- a batch of ONE stratum (n %% batchSize == 1) must not drop the batch dimension (EVE, 2026-11-03: 57,345 = 448 x 128 + 1 training strata gave "Dimension out of range" in torch_cat)
+t1 <- storeSlice(store, 1:5, feats)
+check(identical(as.integer(.rowsOf(t1$x, 3L)$shape), c(1L, as.integer(steps), length(feats))) && identical(as.integer(.take(t1$id, torch_tensor(3L))$shape), 1L) && identical(as.integer(.take(t1$id, 3L)$shape), 1L),
+      "a single index keeps the batch dimension ([1, 11, features] and a length-1 id vector)")
+trOne <- storeSlice(store, seq_len(129L), feats); sOne <- scaleStats(trOne$x, feats); trOne$x <- applyScale(trOne$x, sOne, 10)
+vaOne <- storeSlice(store, which(idx$year == 2019), feats); vaOne$x <- applyScale(vaOne$x, sOne, 10)
+fOne <- try(fitNet(adapterStratum(), list(embDim = 8L, batchSize = 128L, epochs = 2L, lr = 1e-3), trOne, vaOne, store$nUnits, seed = 1L), silent = TRUE)
+check(!inherits(fOne, "try-error") && is.finite(fOne$bestValLoss), "fitNet trains when the last batch of every epoch holds exactly one stratum (129 strata, batch 128)")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

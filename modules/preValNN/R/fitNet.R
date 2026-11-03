@@ -2,7 +2,13 @@
 
 # Layout helpers (2026-10-30; the stratum layout is in strataLayout.R): number of features and the cases (rows) of a matrix [cases, features] or of a stratum tensor [cases, steps, features]
 .nFeat <- function(x) x$size(x$dim())
-.rowsOf <- function(x, i) if (x$dim() == 3L) x[i, , ] else x[i, ]
+#' Rows i (1-based, a tensor or an integer vector) of a tensor, ALWAYS keeping the first dimension. Plain x[i, , ] can drop it when i holds ONE index (the last batch of an epoch when
+#' n %% batchSize == 1, as in the 57,345-stratum training sets of 2026-11-03 on EVE: "Dimension out of range" in torch_cat), depending on the torch build.
+.take <- function(t, i) {
+  i <- if (inherits(i, "torch_tensor")) i$reshape(-1)$to(dtype = torch::torch_long(), device = t$device) else torch::torch_tensor(as.integer(i), dtype = torch::torch_long(), device = t$device)
+  t$index_select(1, i)
+}
+.rowsOf <- function(x, i) .take(x, i)
 
 #' All candidate features in ONE numeric matrix, built once per process. Models select cases by row and features by name.
 #' @param tab final table for modeling
@@ -61,7 +67,7 @@ scoreCases <- function(net, adapter, x, y, id, trainUnitsSeen, nUnits, chunk = 4
   torch::with_no_grad({
     for (a in seq(1L, n, by = chunk)) {
       z <- min(a + chunk - 1L, n); k <- k + 1L
-      o <- net(.rowsOf(x, a:z), idEff[a:z]); yy <- y[a:z]
+      o <- net(.rowsOf(x, a:z), .take(idEff, a:z)); yy <- .take(y, a:z)
       loss[a:z] <- as.numeric(adapter$caseLoss(o, yy, net)$cpu())
       parts[[k]] <- adapter$summarise(o, yy, net)
     }
@@ -92,7 +98,7 @@ fitNet <- function(adapter, hyper, tr, va, nUnits, seed, device = "cpu", patienc
     for (a in seq(1L, n, by = batchSize)) {
       z <- min(a + batchSize - 1L, n); ii <- perm[a:z]
       opt$zero_grad()
-      loss <- adapter$caseLoss(net(.rowsOf(tr$x, ii), tr$id[ii]), tr$y[ii], net)$mean()
+      loss <- adapter$caseLoss(net(.rowsOf(tr$x, ii), .take(tr$id, ii)), .take(tr$y, ii), net)$mean()
       loss$backward(); opt$step()
       runLoss <- runLoss + loss$item() * (z - a + 1L)
     }
