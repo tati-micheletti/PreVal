@@ -28,13 +28,14 @@ RUNENV="/work/${USER}/preval/run_env_caribou_${TAG}_$(date +%Y%m%d_%H%M%S)_$$.sh
 env | grep '^PREVAL_' | sed "s/^\([^=]*\)=\(.*\)\$/export \1='\2'/" > "${RUNENV}" || true
 echo "Settings handed to every job (${RUNENV}):"; sed 's/^/  /' "${RUNENV}"
 EXPORT="--export=ALL,PREVAL_RUN_ENV=${RUNENV}"
+# MEM_PER_CPU (default 7G) raises the memory per task: on 3 Nov 2026 111 of 300 replication/main tasks were killed at 7 GB (OUT_OF_MEMORY).
 # caribou models are heavier than the bird models (up to ~160k training strata x 11 steps): 7 GB per core and 4 h per task (the largest model took 8.5 s per epoch locally)
 if [ "${MODE}" = "test" ]; then
-  id=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --mem-per-cpu=7G --time=01:30:00 --array=1-1 eve/eve_train_array.sbatch)
+  id=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --mem-per-cpu="${MEM_PER_CPU:-7G}" --time=01:30:00 --array=1-1 eve/eve_train_array.sbatch)
   echo "test:    ${id}  Log: /work/${USER}/preval/logs/train_${id%%_*}_1.out"; exit 0
 fi
 NTASKS="${NTASKS:-200}"; MAXPAR="${MAXPAR:-15}"
-train=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --mem-per-cpu=7G --time="${TRAIN_TIME:-04:00:00}" --array=1-"${NTASKS}"%"${MAXPAR}" eve/eve_train_array.sbatch)
+train=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --mem-per-cpu="${MEM_PER_CPU:-7G}" --time="${TRAIN_TIME:-04:00:00}" --array=1-"${NTASKS}"%"${MAXPAR}" eve/eve_train_array.sbatch)
 echo "train:   ${train}  (${NTASKS} tasks, at most ${MAXPAR} at once)"
 ana=$(sbatch --parsable "${EXPORT}" "${PART[@]+"${PART[@]}"}" --dependency=afterok:"${train}" --kill-on-invalid-dep=yes eve/eve_analyze.sbatch)
 echo "analyze: ${ana}"
