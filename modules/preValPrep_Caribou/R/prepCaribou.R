@@ -52,6 +52,17 @@ checkCaribouFinal <- function(dt, featureCandidates, steps = 11L) {
 caribouNetworkSettings <- function() list(embDim = 8L, hidden = c(128, 64), lr = 0.001, batchSize = 128L, epochs = 300L, weightDecay = 0, idIntercept = FALSE, dropout = 0,
                                           lastPilotYear = NA_real_, source = "original caribou network (modules/caribouNN/R/stratumNet.R); not tuned")
 
+#' Guard (2026-11-04): the networkSettings.rds the jobs will read must be what caribouNetworkSettings() writes. The first full EVE runs used a stale file (lr 0.01 instead of 0.001) because the
+#' function was corrected on 31 Oct but the file was never regenerated. `epochs` is compared too: the engine overrides it with the run parameter PREVAL_EPOCHS, so it does not change the training,
+#' but a file that differs in it is a stale file. (What training really used is recorded in settingsStamp.rds, see modules/preValNN/R/settingsStamp.R.)
+#' Stops with the names of the settings that differ; returns TRUE invisibly otherwise.
+CARIBOU_SETTING_KEYS <- c("embDim", "hidden", "lr", "batchSize", "epochs", "weightDecay", "idIntercept", "dropout")
+checkCaribouNetworkSettings <- function(nsDisk, nsRef = caribouNetworkSettings(), file = "networkSettings.rds") {
+  bad <- CARIBOU_SETTING_KEYS[!vapply(CARIBOU_SETTING_KEYS, function(k) isTRUE(all.equal(nsDisk[[k]], nsRef[[k]], check.attributes = FALSE)), logical(1))]
+  if (length(bad)) stop(file, " differs from caribouNetworkSettings() in ", paste(bad, collapse = ", "), " (file lr ", nsDisk$lr, ", expected ", nsRef$lr, "): regenerate it with the prep stage or copy the current one", call. = FALSE)
+  invisible(TRUE)
+}
+
 #' Write everything the engine expects next to each other: <outDir>/final_caribou.rds, featureTable.csv (the global ranking used for the covariate list and for the replication arm),
 #' networkSettings.rds, disturbanceRecodeReport.csv.
 writeCaribouInputs <- function(res, outDir, rankingCsv = NULL) {

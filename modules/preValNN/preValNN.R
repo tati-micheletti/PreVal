@@ -144,6 +144,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       rk0 <- data.table::fread(file.path(root, P(sim)$rankingFile)); feats <- rk0$Feature
       device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"; torch::torch_set_num_threads(as.integer(P(sim)$torchThreads))
       hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch; adapter <- getAdapter(P(sim)$responseType)
+      checkSettingsStamp(rankDir, settingsStamp(hyper, P(sim)$earlyStopPatience), "^s[0-9]+_e[0-9]+\\.csv$")      # 2026-11-04: rankings made with other network settings are never mixed with new ones
       store <- NULL; nDone <- 0L
       for (i in seq_len(nrow(win))) {
         s <- win$windowStart[i]; e <- win$historyEnd[i]; v <- win$valYears[i]; f <- file.path(rankDir, sprintf("s%d_e%d.csv", s, e)); yrs <- paste0(s, "-", e - v)
@@ -177,6 +178,9 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch
       adapter <- getAdapter(P(sim)$responseType)
       modelDir <- file.path(outDir, "testedModels"); dir.create(file.path(modelDir, "errors"), recursive = TRUE, showWarnings = FALSE)
+      stp <- settingsStamp(hyper, P(sim)$earlyStopPatience)      # 2026-11-04: results of other settings are never reused, and the covariate ladder must come from the same network settings
+      checkSettingsStamp(modelDir, stp, "_finalDT\\.csv$")
+      if (isTRUE(P(sim)$rankPerWindow)) checkRankingStamp(file.path(outDir, "rankings"), stp)
       work <- data.table::copy(sim$experimentPlan)
       if (P(sim)$modComplex != "all") work <- work[numberOfCovariates == as.numeric(P(sim)$modComplex)]
       data.table::setorder(work, -nTrainS, modelName)
@@ -212,6 +216,9 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       done <- list.files(file.path(outDir, "testedModels"), pattern = "_finalDT\\.csv$")
       missing <- setdiff(paste0(plan$modelName, "_finalDT.csv"), done)
       if (length(missing)) { writeLines(missing, file.path(outDir, "modelsMissing.txt")); stop(length(missing), " models have no result (see modelsMissing.txt).") }
+      hyperA <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyperA$epochs <- P(sim)$epoch      # 2026-11-04: read-only check that the results were made with the settings of this analysis run
+      stSt <- checkSettingsStamp(file.path(outDir, "testedModels"), settingsStamp(hyperA, P(sim)$earlyStopPatience), "_finalDT\\.csv$", writeIfMissing = FALSE)
+      if (identical(stSt, "missing")) warning("testedModels has no settingsStamp.rds: the settings that made these results cannot be verified (results made before 2026-11-04).", call. = FALSE)
       dp <- readRDS(file.path(outDir, "designParams.rds")); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       au <- auditManifests(idx, plan, file.path(outDir, "splits"), dp$spatial, matchUnits = isTRUE(P(sim)$matchUnits)); data.table::fwrite(au, file.path(outDir, "splitChecks_final.csv"))
       rk <- data.table::fread(file.path(root, P(sim)$rankingFile))
@@ -222,6 +229,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       tab <- data.table::as.data.table(sim$finalTable)
       cs <- if (identical(P(sim)$dataLayout, "strata")) NULL else coefficientStability(tab[tab[[P(sim)$yearCol]] <= P(sim)$endYear], P(sim)$response, featuresForLevel(rk, 10), P(sim)$yearCol)
       if (!is.null(cs)) data.table::fwrite(cs, file.path(outDir, "analysis", "coefficientStability_top10.csv"))
+      if (file.exists(file.path(outDir, "testedModels", "settingsStamp.rds"))) file.copy(file.path(outDir, "testedModels", "settingsStamp.rds"), file.path(outDir, "analysis", "settingsStamp.rds"), overwrite = TRUE)      # the analysis carries the settings that made it
     },
     warning(noEventWarning(sim)))
   invisible(sim)

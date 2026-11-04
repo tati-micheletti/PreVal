@@ -50,9 +50,7 @@ sliceTask <- if (stage %in% c("train", "rank")) {
 if (stage %in% c("design", "rank", "train")) {      # 2026-11-04: the first full EVE runs used a STALE networkSettings.rds (lr 0.01 instead of 0.001); refuse to start when the file is not what the prep code writes
   suppressMessages(library(data.table)); source("modules/preValPrep_Caribou/R/prepCaribou.R")
   nsFile <- file.path(envChr("PREVAL_FINAL", file.path(envChr("PREVAL_OUT", "outputs/caribou_engine"), "caribou")), "networkSettings.rds"); nsDisk <- readRDS(nsFile); nsRef <- caribouNetworkSettings()
-  nsKeys <- c("embDim", "hidden", "lr", "batchSize", "weightDecay", "dropout")
-  if (!isTRUE(all.equal(nsDisk[nsKeys], nsRef[nsKeys]))) stop("networkSettings.rds (", nsFile, ") differs from caribouNetworkSettings() in ", paste(nsKeys[!mapply(function(k) isTRUE(all.equal(nsDisk[[k]], nsRef[[k]])), nsKeys)], collapse = ", "),
-                                                                  " (file lr ", nsDisk$lr, ", expected ", nsRef$lr, "): regenerate it with the prep stage or copy the current one")
+  checkCaribouNetworkSettings(nsDisk, nsRef, nsFile)      # the check itself lives in prepCaribou.R so that it is tested (modules/preValNN/tests/test_settingsguard.R); 2026-11-04 it also compares epochs and idIntercept
 }
 if (stage %in% c("prep", "all")) {            # final table + global ranking + network settings (the original network, never tuned: no pilot)
   suppressMessages(library(data.table)); source("modules/preValNN/R/seeds.R"); source("modules/preValPrep_Caribou/R/prepCaribou.R")
