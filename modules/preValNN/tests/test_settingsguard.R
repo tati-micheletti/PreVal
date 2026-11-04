@@ -70,4 +70,16 @@ rk3 <- file.path(tempfile("run"), "rankings"); checkSettingsStamp(rk3, stp, "^s[
 check(identical(checkRankingStamp(rk3, stp), "match"), "rankings made with the same settings pass")
 check(identical(settingsStamp(hyper, 10), settingsStamp(rev(hyper), 10)), "the stamp does not depend on the order in which settings were listed")
 
+# ---- 4. an arm that reuses the ladder of main must find it (caribou: run_main; birds: run) ----
+rt <- tempfile("root"); dir.create(file.path(rt, "run_main", "rankings"), recursive = TRUE)
+check(identical(resolveLadderDir(rt, "main"), file.path(rt, "run_main", "rankings")), "rankingsFromTag = main finds run_main/rankings of the caribou layout (it used to look for 'run' and silently ranked from scratch)")
+rt2 <- tempfile("root"); dir.create(file.path(rt2, "run", "rankings"), recursive = TRUE)
+check(identical(resolveLadderDir(rt2, "main"), file.path(rt2, "run", "rankings")), "the bird layout (main run in 'run') still resolves")
+check(identical(resolveLadderDir(rt2, ""), file.path(rt2, "run", "rankings")), "an empty tag (refit without baseRunTag) resolves to 'run' as before")
+dir.create(file.path(rt, "run_newPlaces", "rankings"), recursive = TRUE)
+check(identical(resolveLadderDir(rt, "newPlaces"), file.path(rt, "run_newPlaces", "rankings")), "another arm's tag resolves to run_<tag>")
+src <- file.path(rt, "run_main", "rankings"); writeLines("x", file.path(src, "s2013_e2014.csv"))
+check(fails(checkRankingStamp(src, stp), "no settingsStamp"), "a ladder to be copied from an unstamped run is refused")
+checkSettingsStamp(src, stp, "^s[0-9]+_e[0-9]+\\.csv$", adopt = TRUE); check(identical(checkRankingStamp(src, stp), "match"), "a ladder to be copied from a run with the same settings is accepted")
+
 cat(sprintf("\n%d check(s) failed.\n", nFail)); if (nFail > 0L) quit(status = 1L)

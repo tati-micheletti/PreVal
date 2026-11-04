@@ -53,6 +53,14 @@ checkSettingsStamp <- function(dir, stamp, resultPattern, adopt = identical(Sys.
   if (have) "adopted" else "written"
 }
 
+#' Folder of the rankings that an arm reuses (parameter rankingsFromTag / PREVAL_RANKFROM), 2026-11-04. The caribou arms live in run_<tag> (the main arm in run_main), the bird main run in "run".
+#' "main" used to be resolved to "run" only, which does not exist for caribou: the reuse silently found nothing and the arm ranked from scratch.
+resolveLadderDir <- function(root, fromTag) {
+  has <- nzchar(fromTag) && fromTag != "main"
+  if (nzchar(fromTag)) { cand <- file.path(root, paste0("run_", fromTag), "rankings"); if (dir.exists(cand)) return(cand) }
+  file.path(root, paste0("run", if (has) paste0("_", fromTag) else ""), "rankings")
+}
+
 #' The rankings of a run (the covariate ladder) must come from a network trained like the models that use it: compare the rankings stamp with the training stamp.
 checkRankingStamp <- function(rankDir, stamp, adopt = identical(Sys.getenv("PREVAL_ADOPT_STAMP"), "1")) {
   f <- file.path(rankDir, "settingsStamp.rds")

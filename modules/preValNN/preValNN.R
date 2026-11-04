@@ -139,12 +139,13 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       if (!is.null(slice)) win <- win[(seq_len(.N) - 1L) %% slice[2] == (slice[1] - 1L)]
       isRefit <- nzchar(P(sim)$planRegimes) && all(grepl("Refit$", trimws(strsplit(P(sim)$planRegimes, ",")[[1]])))
       fromTag <- if (isRefit) P(sim)$baseRunTag else P(sim)$rankingsFromTag
-      fromDir <- if (isRefit || nzchar(fromTag)) file.path(root, paste0("run", if (nzchar(fromTag) && fromTag != "main") paste0("_", fromTag) else ""), "rankings") else NA_character_   # "main" = the main run folder
+      fromDir <- if (isRefit || nzchar(fromTag)) resolveLadderDir(root, fromTag) else NA_character_   # 2026-11-04: "main" = run_main (caribou) or run (birds), see resolveLadderDir()
       tab <- data.table::as.data.table(sim$finalTable); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       rk0 <- data.table::fread(file.path(root, P(sim)$rankingFile)); feats <- rk0$Feature
       device <- if (isTRUE(P(sim)$useGPU) && torch::cuda_is_available()) "cuda" else "cpu"; torch::torch_set_num_threads(as.integer(P(sim)$torchThreads))
       hyper <- applyHyperOverride(sim$networkSettings, P(sim)$hyperOverride); hyper$epochs <- P(sim)$epoch; adapter <- getAdapter(P(sim)$responseType)
       checkSettingsStamp(rankDir, settingsStamp(hyper, P(sim)$earlyStopPatience), "^s[0-9]+_e[0-9]+\\.csv$")      # 2026-11-04: rankings made with other network settings are never mixed with new ones
+      if (!is.na(fromDir) && dir.exists(fromDir)) checkRankingStamp(fromDir, settingsStamp(hyper, P(sim)$earlyStopPatience))      # 2026-11-04: a ladder that is copied from another run must come from the same network settings too
       store <- NULL; nDone <- 0L
       for (i in seq_len(nrow(win))) {
         s <- win$windowStart[i]; e <- win$historyEnd[i]; v <- win$valYears[i]; f <- file.path(rankDir, sprintf("s%d_e%d.csv", s, e)); yrs <- paste0(s, "-", e - v)
