@@ -23,8 +23,23 @@ defaultWorldParams <- function() list(
   driftRate = 1.0,                                    # beta_j(t) = c_j * (1 + driftRate * u(t)), u from -1 (first year) to +1 (last year)
   flipMode = "random", regimeLength = 6,             # flipMode "random": every flipper has its own sign chain (flipProb per year); "regime" (added 2026-10-29): ONE regime chain shared by all flippers, mean regime length `regimeLength` years (warm / cold spells), each flipper tied to it with a random sign
   flipStrength = 1.0, flipProb = 0.3, flipShared = FALSE,   # beta_j(t) = c_j * (sqrt(1 - phi^2) + phi * s_j(t)); phi = flipStrength; 0 = the family is stable
-  trend = 0, trendFamilies = c("drift", "flip", "noise")     # shift of the dynamic covariates over the whole series, in SD units (novelty of the later years)
+  trend = 0, trendFamilies = c("drift", "flip", "noise"),    # shift of the dynamic covariates over the whole series, in SD units (novelty of the later years)
+  # CHANGED 2026-11-05: lighter-tailed route effect. routeDist = "lognormal" is the original behaviour (route effect = a Gaussian share of var(eta), so exp() gives a log-normal multiplier on the mean).
+  # routeDist = "beta": the route multiplier on the MEAN is Beta(routeBeta[["a"]], routeBeta[["b"]]) rescaled to mean 1 (bounded above at 1 / mean(Beta) times the mean; the real greenfinch counts have no
+  # heavy upper tail, the log-normal one gave a variance over mean of 29 against 8). The multiplier is the rank transform of the same spatial-plus-independent Gaussian route field as before
+  # (rangeKm, routeSpatialShare), so the spatial structure is kept up to the (weaker) effect of the rank transform. In this mode `shares["route"]` is ignored, the other shares are
+  # renormalised among themselves, and etaSd is the sd of the NON-route part of eta (covariates + year). The route share of var(eta) is then an outcome (see worldDiagnostics).
+  routeDist = "lognormal", routeBeta = c(a = 0.35, b = 0.70),
+  # CHANGED 2026-11-05: route-level drift (default off). The stable level of a route is no longer constant: log-mean of route i in year t = route effect + d[i, t], d an AR(1) process per route with stationary sd `routeDrift`
+  # (log scale; 0 = off: the world is then identical to the one without this option) and year-to-year autocorrelation `routeDriftRho` (exp(-1/5) = 0.82: the autocorrelation decays to 1/e in about 5 years). Covariates cannot explain it,
+  # so a model that memorises the route level goes stale with the horizon: the test of the "stale memory" explanation with known truth. Its own seeded stream: switching it on changes only the counts (matched worlds).
+  routeDrift = 0, routeDriftRho = exp(-1 / 5)
 )
+
+# CHANGED 2026-11-05: the calibrated birds-type realism anchor (parameter set found in simulation/sim_calibrate_anchor.R, section 9 of the analysis plan); defaultWorldParams() stays the generic world of the unit tests.
+anchorWorldParams <- function() utils::modifyList(defaultWorldParams(), list(
+  nRoutes = 2139L, surveyProb = 0.49, meanCount = 3.87, theta = 15, routeDist = "beta", routeBeta = c(a = 0.35, b = 0.60),
+  etaSd = 0.50, rangeKm = 18, routeSpatialShare = 0.20))
 
 # run `expr` with its own seed and restore the caller's RNG state
 .seeded <- function(seed, expr) {
@@ -46,8 +61,10 @@ defaultWorldParams <- function() list(
 
 simulateWorld <- function(params = list()) {
   P <- utils::modifyList(defaultWorldParams(), params)
-  stopifnot(P$flipMode %in% c("random", "regime"), P$regimeLength >= 1, P$flipStrength >= 0, P$flipStrength <= 1, P$flipProb >= 0, P$flipProb <= 1, P$yearShare >= 0, P$yearShare < 1, all(P$shares >= 0))
-  sh <- P$shares / sum(P$shares); V <- P$etaSd^2; yrs <- as.integer(P$years); nY <- length(yrs); sd0 <- P$seed * 1000L
+  stopifnot(P$flipMode %in% c("random", "regime"), P$regimeLength >= 1, P$flipStrength >= 0, P$flipStrength <= 1, P$flipProb >= 0, P$flipProb <= 1, P$yearShare >= 0, P$yearShare < 1, all(P$shares >= 0),
+            P$routeDist %in% c("lognormal", "beta"), P$routeDrift >= 0, P$routeDriftRho >= 0, P$routeDriftRho < 1, all(P$routeBeta > 0), all(c("a", "b") %in% names(P$routeBeta)))
+  shr <- P$shares; if (identical(P$routeDist, "beta")) shr[["route"]] <- 0      # CHANGED 2026-11-05: lighter-tailed route effect: no route share, the route multiplier is Beta (see defaultWorldParams)
+  sh <- shr / sum(shr); V <- P$etaSd^2; yrs <- as.integer(P$years); nY <- length(yrs); sd0 <- P$seed * 1000L
   # --- routes and surveys
   rt <- .seeded(sd0 + 1L, data.table::data.table(route = sprintf("s%04d", seq_len(P$nRoutes)), x = stats::runif(P$nRoutes, P$box[["xmin"]], P$box[["xmax"]]), y = stats::runif(P$nRoutes, P$box[["ymin"]], P$box[["ymax"]]),
                                                  p = stats::rbeta(P$nRoutes, 4 * P$surveyProb, 4 * (1 - P$surveyProb))))
@@ -86,9 +103,15 @@ simulateWorld <- function(params = list()) {
   scaleTo <- function(v, target) { sdv <- stats::sd(v); if (target <= 0 || sdv == 0) list(v = rep(0, n), k = 0) else list(v = v * sqrt(target * V) / sdv, k = sqrt(target * V) / sdv) }
   cs <- lapply(c("stable", "drift", "flip"), function(f) scaleTo(raw(f), sh[[f]])); names(cs) <- c("stable", "drift", "flip")
   rr <- .seeded(sd0 + 4000L, .std(sqrt(P$routeSpatialShare) * .field(rt$x, rt$y, ell, sd0 + 4001L) + sqrt(1 - P$routeSpatialShare) * stats::rnorm(nrow(rt))))
-  route <- scaleTo(rr[tab$ri], sh[["route"]])$v
+  route <- if (identical(P$routeDist, "beta")) {      # CHANGED 2026-11-05: lighter-tailed route effect: rank-transform the spatial Gaussian route field to a Beta marginal (multiplier on the mean, mean 1), log-scale in eta
+    mB <- stats::qbeta(rank(rr, ties.method = "first") / (length(rr) + 1), P$routeBeta[["a"]], P$routeBeta[["b"]]); mB <- mB / mean(mB); log(mB)[tab$ri]
+  } else scaleTo(rr[tab$ri], sh[["route"]])$v
   yEff <- scaleTo(.seeded(sd0 + 5000L, .std(stats::rnorm(nY)))[yi], sh[["year"]])$v
-  eta <- cs$stable$v + cs$drift$v + cs$flip$v + route + yEff
+  routeDriftV <- if (P$routeDrift > 0) {      # CHANGED 2026-11-05: route-level drift (AR(1) per route, stationary sd routeDrift, stationary start); the first year is the first year of the series
+    dm <- .seeded(sd0 + 4500L, { z <- matrix(stats::rnorm(nrow(rt) * nY), nrow(rt), nY); d <- z; d[, 1] <- z[, 1]; for (t in seq_len(nY)[-1]) d[, t] <- P$routeDriftRho * d[, t - 1] + sqrt(1 - P$routeDriftRho^2) * z[, t]; P$routeDrift * d })
+    dm[cbind(tab$ri, yi)]
+  } else rep(0, n)
+  eta <- cs$stable$v + cs$drift$v + cs$flip$v + route + yEff + routeDriftV
   b0 <- log(P$meanCount) - log(mean(exp(eta))); mu <- exp(b0 + eta)
   cnt <- .seeded(sd0 + 6000L, stats::rnbinom(n, mu = mu, size = P$theta))
   # --- table in the engine's format: neutral names, shuffled column order
@@ -101,7 +124,7 @@ simulateWorld <- function(params = list()) {
   famTab[, coefficient := coefs * scl[fam]]
   trueBeta <- B * scl[fam]; dimnames(trueBeta) <- list(famTab$covariate, yrs)
   list(table = final[], params = P, covariates = famTab[], trueBeta = trueBeta, flipSigns = `dimnames<-`(S, list(famTab$covariate[flipIx], yrs)),
-       contributions = data.table::data.table(SITE_ID = tab$route, year = tab$year, stable = cs$stable$v, drift = cs$drift$v, flip = cs$flip$v, route = route, year_effect = yEff, eta = eta, mu = mu),
+       contributions = data.table::data.table(SITE_ID = tab$route, year = tab$year, stable = cs$stable$v, drift = cs$drift$v, flip = cs$flip$v, route = route, year_effect = yEff, route_drift = routeDriftV, eta = eta, mu = mu),
        intercept = b0)
 }
 
@@ -134,8 +157,19 @@ oracleRanking <- function(w) {
 #   flippersFirst  flipping covariates first (by peak true effect), then stable and drifting ones (by peak effect), then noise
 #   flippersLast   stable and drifting covariates first (by peak effect), then the flipping ones, then noise
 #   random         all covariates, including noise, in a random order (seeded by `seed`)
-ladderRanking <- function(w, order = c("flippersFirst", "flippersLast", "random"), seed = 1L) {
+#   oracle         all covariates ordered by peak true effect (the oracle ladder of oracleRanking(), made deterministic by `seed`)
+#   oracleSwap     CHANGED 2026-11-05: the oracle ladder with every flipping covariate swapped with the stable covariate of the SAME RANK WITHIN ITS FAMILY (strongest flipper <-> strongest stable, ...), each in the other's ladder POSITION.
+#                  The causal swap test: the two ladders occupy identical positions and differ only in which covariates (flipping instead of stable, of matched strength rank) sit there.
+ladderRanking <- function(w, order = c("flippersFirst", "flippersLast", "random", "oracle", "oracleSwap"), seed = 1L) {
   order <- match.arg(order); pk <- apply(abs(w$trueBeta), 1, max); ct <- w$covariates[match(rownames(w$trueBeta), covariate)]
+  if (order %in% c("oracle", "oracleSwap")) {
+    key <- ifelse(ct$family == "noise", -.seeded(seed, stats::runif(nrow(ct))) * 1e-6, pk); o <- base::order(-key); feat <- ct$covariate[o]
+    if (order == "oracleSwap") {
+      fl <- ct[family == "flip"][base::order(rankInFamily)]$covariate; st <- ct[family == "stable"][base::order(rankInFamily)]$covariate; k <- min(length(fl), length(st))
+      mp <- c(stats::setNames(st[seq_len(k)], fl[seq_len(k)]), stats::setNames(fl[seq_len(k)], st[seq_len(k)])); hit <- feat %in% names(mp); feat[hit] <- unname(mp[feat[hit]])
+    }
+    r <- data.table::data.table(Feature = feat, group = feat, Importance = key[o], ImportanceSD = 0, marginalAssoc = NA_real_); r[, rank := seq_len(.N)]; return(r[])
+  }
   tier <- switch(order, flippersFirst = c(flip = 3, stable = 2, drift = 2, noise = 0)[ct$family], flippersLast = c(flip = 2, stable = 3, drift = 3, noise = 0)[ct$family], random = rep(0, nrow(ct)))
   key <- if (order == "random") -.seeded(seed, stats::runif(nrow(ct))) else as.numeric(tier) * 1000 + ifelse(ct$family == "noise", -.seeded(seed, stats::runif(nrow(ct))) * 1e-3, pk)
   o <- base::order(-key); r <- data.table::data.table(Feature = ct$covariate[o], group = ct$covariate[o], Importance = key[o], ImportanceSD = 0, marginalAssoc = NA_real_)

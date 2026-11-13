@@ -71,4 +71,46 @@ check(all(abs(sg) == 1) && length(unique(apply(sg, 1, function(v) paste(v * v[1]
 wl <- sapply(1:40, function(sd) { z <- simulateWorld(list(seed = sd, nRoutes = 100L, nNoise = 2L, nStable = 2L, nDrift = 2L, nFlip = 2L, flipMode = "regime", regimeLength = 8)); mean(z$flipSigns[1, -1] != z$flipSigns[1, -ncol(z$flipSigns)]) })
 check(abs(mean(wl) - 1 / 8) < 0.04, sprintf("regime length: realised change frequency %.3f near 1/8", mean(wl)))
 check(identical(wr$table[, !"Reviere"], simulateWorld(list(seed = 3L, nRoutes = 800L, flipMode = "random", flipStrength = 1))$table[, !"Reviere"]), "flip mode changes only the counts, not the routes or covariates (matched worlds)")
+# ---- CHANGED 2026-11-05: lighter-tailed (Beta) route effect and the calibrated birds anchor
+source(file.path(here, "sim_anchor_metrics.R"))
+check(identical(defaultWorldParams()$routeDist, "lognormal") && identical(anchorWorldParams()$routeDist, "beta"), "defaults: the generic world keeps the log-normal route effect, the anchor world uses the Beta one")
+ap <- anchorWorldParams(); ab <- ap$routeBeta
+wb <- simulateWorld(modifyList(ap, list(seed = 3L, flipStrength = 0))); Kb <- wb$contributions
+mr <- unique(data.table(SITE_ID = Kb$SITE_ID, m = exp(Kb$route)))[wb$table[, .(x = x[1], y = y[1]), by = SITE_ID], on = "SITE_ID"]
+bnd <- (ab[["a"]] + ab[["b"]]) / ab[["a"]]
+check(abs(mean(mr$m) - 1) < 1e-9 && max(mr$m) <= 1.01 * bnd && max(mr$m) > 0.9 * bnd, sprintf("Beta route multiplier: mean 1, bounded above by about (a+b)/a = %.2f (max %.2f); the log-normal one is unbounded", bnd, max(mr$m)))
+ksD <- unname(suppressWarnings(stats::ks.test(mr$m / bnd, "pbeta", ab[["a"]], ab[["b"]])$statistic))
+check(ksD < 0.01, sprintf("the route multiplier has the Beta(%.2f, %.2f) marginal (Kolmogorov-Smirnov distance %.4f)", ab[["a"]], ab[["b"]], ksD))
+set.seed(2); nn <- nrow(mr); pb <- data.table(a = sample(nn, 200000, TRUE), b = sample(nn, 200000, TRUE))[a != b]; pb[, d := sqrt((mr$x[a] - mr$x[b])^2 + (mr$y[a] - mr$y[b])^2)]
+cNear <- pb[d < 25000, cor(mr$m[a], mr$m[b], method = "spearman")]; cFar <- pb[d > 150000, cor(mr$m[a], mr$m[b], method = "spearman")]
+nnb <- sapply(seq_len(nn), function(i) { dd <- (mr$x - mr$x[i])^2 + (mr$y - mr$y[i])^2; dd[i] <- Inf; which.min(dd) }); cNn <- cor(mr$m, mr$m[nnb], method = "spearman")      # nearest-neighbour route of every route
+check(cNn > 0.05 && abs(cFar) < 0.03, sprintf("the Beta route effect keeps a weak spatial structure: Spearman correlation %.2f between nearest-neighbour routes, %.3f beyond 150 km", cNn, cFar))
+dgb <- worldDiagnostics(wb); shB <- (anchorWorldParams()$shares[c("stable", "drift", "flip", "year")]); shB <- shB / sum(shB)
+check(max(abs(c(var(Kb$stable), var(Kb$drift), var(Kb$flip), var(Kb$year_effect)) / ap$etaSd^2 - shB)) < 1e-6, "Beta mode: the covariate and year contributions keep their shares of the NON-route variance (etaSd^2), exact by construction")
+wb1 <- simulateWorld(modifyList(ap, list(seed = 3L, flipStrength = 1, flipProb = 0.3)))
+check(identical(wb1$table[, !"Reviere"], wb$table[, !"Reviere"]) && max(abs(wb1$trueBeta[wb1$covariates[family == "flip"]$covariate, ])) > 0 &&
+        all(apply(wb1$flipSigns, 1, function(r) length(unique(r))) == 2) && all(apply(wb$trueBeta[wb$covariates[family == "flip"]$covariate, ], 1, function(r) diff(range(r)) < 1e-12)),
+      "Beta mode: flip, stable and noise mechanics unchanged (phi 0 = stable family, phi 1 = both signs; matched worlds share routes and covariates)")
+# the calibrated anchor (phi = 0): the mean over six seeds passes every tolerance accepted on 2026-11-05, and at least five of the six single worlds do (the spatial-correlation statistic of one world has a sampling sd of about 0.03 in the 0-25 km band)
+mA <- do.call(rbind, lapply(1:6, function(sd) anchorMetrics(simulateWorld(modifyList(ap, list(seed = sd, flipStrength = 0)))$table))); ckA <- apply(mA, 1, function(r) all(anchorCheck(r)))
+ckM <- anchorCheck(colMeans(mA))
+check(all(ckM), sprintf("anchor (phi 0), mean of seeds 1-6 within all tolerances: mean %.2f, var/mean %.1f, zeros %.3f, ICC %.2f, per year %.0f, spatial %.3f/%.3f/%.3f/%.3f/%.3f%s", mean(mA[, "mean"]), mean(mA[, "varOverMean"]), mean(mA[, "zeros"]), mean(mA[, "ICC"]), mean(mA[, "perYear"]),
+      mean(mA[, "sp0_25"]), mean(mA[, "sp25_50"]), mean(mA[, "sp50_100"]), mean(mA[, "sp100_150"]), mean(mA[, "sp150_300"]), if (all(ckM)) "" else paste("; FAILS:", paste(names(ckM)[!ckM], collapse = ","))))
+check(sum(ckA) >= 5, sprintf("anchor (phi 0): %d of 6 single worlds within every tolerance", sum(ckA)))
+# ---- CHANGED 2026-11-05: route-level drift (default off) and the swap ladders
+check(identical(ap$routeDrift, 0) && all(wb$contributions$route_drift == 0), "route-level drift is off by default (anchor world unchanged) and the drift contribution is zero")
+wd0 <- simulateWorld(modifyList(ap, list(seed = 3L, flipStrength = 0, routeDrift = 0.4)))
+check(identical(wd0$table[, !"Reviere"], wb$table[, !"Reviere"]) && !identical(wd0$table$Reviere, wb$table$Reviere) && identical(wd0$trueBeta, wb$trueBeta), "route drift on: routes, covariates and true effects are those of the matched world without it, only the counts change")
+Kd <- data.table::copy(wd0$contributions); data.table::setorder(Kd, SITE_ID, year)
+lagAc <- function(l) { w2 <- data.table::dcast(Kd, SITE_ID ~ year, value.var = "route_drift"); yy <- as.character(2005:(2024 - l)); cor(unlist(w2[, ..yy]), unlist(w2[, as.character(as.integer(yy) + l), with = FALSE]), use = "complete.obs") }
+rho <- exp(-1 / 5)
+check(abs(sd(Kd$route_drift) - 0.4) < 0.03 && abs(lagAc(1) - rho) < 0.05 && abs(lagAc(5) - rho^5) < 0.07, sprintf("route drift is AR(1): sd %.3f (0.4), autocorrelation lag 1 %.2f (%.2f), lag 5 %.2f (%.2f; decay to 1/e in about 5 years)", sd(Kd$route_drift), lagAc(1), rho, lagAc(5), rho^5))
+mD <- anchorMetrics(wd0$table); ckD <- anchorCheck(mD)
+check(all(ckD), sprintf("the moderate drift (sd 0.4) world stays inside every anchor tolerance (var/mean %.1f, zeros %.3f, ICC %.2f)%s", mD[["varOverMean"]], mD[["zeros"]], mD[["ICC"]], if (all(ckD)) "" else paste("; FAILS:", paste(names(ckD)[!ckD], collapse = ","))))
+or <- ladderRanking(wb, "oracle", seed = 3L); sw <- ladderRanking(wb, "oracleSwap", seed = 3L); fm <- wb$covariates
+fF <- fm[family == "flip"][order(rankInFamily)]$covariate; fS <- fm[family == "stable"][order(rankInFamily)]$covariate
+posOf <- function(r, cn) match(cn, r$Feature)
+check(identical(sort(or$Feature), sort(sw$Feature)) && all(posOf(sw, fF) == posOf(or, fS)) && all(posOf(sw, fS) == posOf(or, fF)) && identical(or$Feature, ladderRanking(wb, "oracle", seed = 3L)$Feature),
+      "swap ladder: every flipper sits in the ladder position of the stable covariate of the same rank within its family and vice versa; all other positions (drift, noise) are identical; deterministic")
+check(all(c("Feature", "group", "Importance", "ImportanceSD", "marginalAssoc", "rank") %in% names(sw)) && identical(sw$rank, seq_len(nrow(sw))), "swap and oracle ladders are in the engine's ranking-file format")
 cat(sprintf("\n%d failure(s)\n", nFail)); if (nFail) quit(status = 1)

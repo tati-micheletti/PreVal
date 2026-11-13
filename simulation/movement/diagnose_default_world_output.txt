@@ -1,0 +1,98 @@
+
+===== world in C:\Users\michelet\AppData\Local\Temp\claude\99d62fbcc8f70fb6\d5cc68df-910c-4547-a0c2-4feecbab7f6b\scratchpad\sim_move\default_world =====
+strata 300,598, rows 3,306,578, animals 126, animal-years 441, candidate columns 30, years 2013-2022
+strata per animal-year: mean 682, median 592, quartiles 445-830, min 108, max 2375   (real: mean 663)
+by year:
+  year strata animals newAnimals   shareNew
+ <int>  <int>   <int>      <int>      <num>
+  2013  21823      26         26 1.00000000
+  2014  18136      26          6 0.23076923
+  2015  26252      34         10 0.29411765
+  2016  21886      33          3 0.09090909
+  2017  20704      36         14 0.38888889
+  2018  33568      48         16 0.33333333
+  2019  35948      55          8 0.14545455
+  2020  41476      64         19 0.29687500
+  2021  41208      61         10 0.16393443
+  2022  39597      58         14 0.24137931
+real strata: 16701 15224 18643 19837 20629 33611 37985 48748 42208 38993 
+real animals: 26 26 34 33 36 48 55 64 61 58 
+real new animals: 26 6 10 3 14 16 8 19 10 14 
+extent 305 x 277 km; 100 km blocks occupied 10; share of strata in the 3 fullest blocks 0.73; animals' range (median over animals of the 95% span of start positions) 19 km
+share of a year's animals that were also present the year before: 0.76 (real, from the table above: 0.76)
+movement by year (used = observed steps, avail = the 10 available steps of the strata):
+  year meanLogSlUsed meanLogSlAvail   tilt medianStepUsedM meanCosTaUsed meanCosTaAvail
+ <num>         <num>          <num>  <num>           <num>         <num>          <num>
+  2013         5.080          5.783 -0.702         222.078         0.075          0.153
+  2014         5.613          5.736 -0.123         343.765         0.123          0.148
+  2015         5.455          5.751 -0.296         305.948         0.097          0.155
+  2016         5.543          5.739 -0.196         324.254         0.112          0.151
+  2017         5.659          5.730 -0.071         359.242         0.138          0.150
+  2018         5.638          5.731 -0.093         351.635         0.121          0.150
+  2019         5.825          5.710  0.115         426.256         0.149          0.148
+  2020         5.660          5.727 -0.067         365.386         0.121          0.151
+  2021         5.583          5.736 -0.153         341.009         0.115          0.153
+  2022         5.342          5.759 -0.417         282.938         0.100          0.154
+real mean observed log step length 2013-22: 5.429 5.767 5.684 5.765 5.956 5.837 6.086 5.811 5.755 5.567 (mean 5.766, sd 0.184); real median step (m): 287 410 390 421 511 436 554 428 399 346
+this table: sd of the yearly mean observed log step length 0.207; range 5.08-5.82
+
+identifiable columns (vary inside a stratum): 21 of 30   (real: 21 of 30)
+single-covariate yearly conditional logits: 8 of 21 identifiable columns have >= 3 years with the opposite sign (flipPrimary), 12 have a significant positive AND a significant negative year (flipStrict)   (real: 10 of 21; strict 9)
+  of the 8 flipPrimary columns, 8 are movement-block columns (logSl, cosTa, interactions) and 0 are habitat end columns   (real: 9 and 1)
+flipPrimary among the top-k columns, ordered by the pooled association strength |z| (a stand-in for the engine's importance order):
+     k nFlipPrimary share
+ <num>        <int> <num>
+     2            0  0.00
+     5            0  0.00
+    10            1  0.10
+    20            7  0.35
+real (first-pass importance order): top 2: 1, top 5: 4, top 10: 7, top 20: 10
+columns, strongest pooled association first:
+ rankByAssoc  covariate   role trueFamily meanBeta nPositive nNegative oppositeSignYears sigPos sigNeg flipPrimary flipStrict
+       <int>     <char> <char>     <char>    <num>     <int>     <int>             <int>  <int>  <int>      <lgcl>     <lgcl>
+           1 mv_cov_030    end     stable    0.475        10         0                 0     10      0       FALSE      FALSE
+           2 mv_cov_022  logSl       flip   -0.093         1         9                 1      1      9       FALSE       TRUE
+           3 mv_cov_016    end     stable    0.467        10         0                 0     10      0       FALSE      FALSE
+           4 mv_cov_011    end      drift   -0.396         0        10                 0      0      9       FALSE      FALSE
+           5 mv_cov_003    end     stable    0.488        10         0                 0     10      0       FALSE      FALSE
+           6 mv_cov_002  inter       flip    0.052         7         3                 3      7      2        TRUE       TRUE
+           7 mv_cov_004    end     stable    0.462        10         0                 0     10      0       FALSE      FALSE
+           8 mv_cov_007    end       flip   -0.514         1         9                 1      0      9       FALSE      FALSE
+           9 mv_cov_008  inter       flip   -0.052         1         9                 1      1      9       FALSE       TRUE
+          10 mv_cov_025  inter       flip   -0.049         1         9                 1      1      8       FALSE       TRUE
+          11 mv_cov_009    end      drift   -0.207         1         9                 1      1      9       FALSE       TRUE
+          12 mv_cov_012  inter       flip    0.033         7         3                 3      6      2        TRUE       TRUE
+          13 mv_cov_010  cosTa       flip   -0.074         1         9                 1      0      9       FALSE      FALSE
+          14 mv_cov_005  inter       flip   -0.019         3         7                 3      2      6        TRUE       TRUE
+          15 mv_cov_024  inter      noise   -0.011         3         7                 3      3      7        TRUE       TRUE
+          16 mv_cov_017  inter       flip   -0.024         3         7                 3      3      7        TRUE       TRUE
+          17 mv_cov_020  inter      noise    0.016         7         3                 3      7      3        TRUE       TRUE
+          18 mv_cov_014    end      noise   -0.073         2         8                 2      1      6       FALSE       TRUE
+          19 mv_cov_021  inter       flip    0.000         7         3                 7      6      2        TRUE       TRUE
+          20 mv_cov_023    end      noise   -0.024         1         9                 1      0      2       FALSE      FALSE
+          21 mv_cov_019  sinTa      noise    0.000         5         5                 5      0      0        TRUE      FALSE
+ rankByAssoc  covariate   role trueFamily meanBeta nPositive nNegative oppositeSignYears sigPos sigNeg flipPrimary flipStrict
+       <int>     <char> <char>     <char>    <num>     <int>     <int>             <int>  <int>  <int>      <lgcl>     <lgcl>
+
+pooled conditional logit (21 identifiable columns, 60,000 training strata of 2013-2017), cross-entropy by year:
+  year            set     ce chance excessOverChance
+ <num>         <char>  <num>  <num>            <num>
+  2013 training years 2.2489 2.3979          -0.1490
+  2014 training years 2.3997 2.3979           0.0018
+  2015 training years 2.3173 2.3979          -0.0806
+  2016 training years 2.3246 2.3979          -0.0733
+  2017 training years 2.3390 2.3979          -0.0589
+  2018       forecast 2.3436 2.3979          -0.0543
+  2019       forecast 2.4340 2.3979           0.0361
+  2020       forecast 2.3953 2.3979          -0.0026
+  2021       forecast 2.3748 2.3979          -0.0231
+  2022       forecast 2.3365 2.3979          -0.0614
+mean over forecast years: -0.0211 above chance (a flexible NN overfits more; the real status quo was +0.019 to +0.046 above chance, PreVal about at chance)
+
+ORACLE (the true selection function; chance = log 11 = 2.3979): cross-entropy 2.2795 (gain 0.1184); without the animal deviations and the home pull 2.3202 (gain 0.0777)
+oracle cross-entropy by year: 2013 2.187 | 2014 2.323 | 2015 2.271 | 2016 2.286 | 2017 2.284 | 2018 2.291 | 2019 2.259 | 2020 2.305 | 2021 2.304 | 2022 2.267 
+MEMORY value with a known truth (animal drift share 0.50, persistence 0.60): gain in cross-entropy of knowing the animal's preferences from `lag` years earlier: lag 0 0.0402 | lag 1 0.0264 | lag 2 0.0177 | lag 3 0.0136 | lag 4 0.0102 | lag 5 0.0096 | lag 6 0.0097
+realised shares of the within-stratum variance of eta over the 11 steps of a stratum: stable 0.41, drift 0.06, flip 0.08, move 0.12, animal 0.33; within-stratum sd of eta 0.691 (target 0.60); sd of the omitted home pull term 0.039
+true yearly pattern of the movement block (shape = sqrt(1-phi^2) + phi s(t)): -1.83 0.01 -0.44 -0.01 1.03 0.39 1.74 0.25 -0.06 -1.08
+distance of the animals from their home centre (km): median 11.4, 90% quantile 22.8 (home range parameter 15 km)
+true flip structure: habitat layers that flip:  mv_cov_007 ; movement block: schedule with flip strength 1 

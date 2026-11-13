@@ -1,0 +1,11 @@
+unit,world,ladder,design,arm,tag,ladderTag,rankPerWindow,rankFrom,routeHeldOut,planRegimes
+1,s0_w1,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+2,s0_w1,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+3,s0_w2,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+4,s0_w2,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+5,s0_w3,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+6,s0_w3,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+7,s0_w4,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+8,s0_w4,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+9,s0_w5,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+10,s0_w5,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"

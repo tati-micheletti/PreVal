@@ -1,0 +1,5 @@
+unit,world,ladder,design,arm,tag,ladderTag,rankPerWindow,rankFrom,routeHeldOut,planRegimes
+1,smoke_w1,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+2,smoke_w1,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+3,smoke_w1,flippersFirst,same,main,same,flippersFirst,0,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+4,smoke_w1,flippersFirst,new,spatialTest,new,flippersFirst,0,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
