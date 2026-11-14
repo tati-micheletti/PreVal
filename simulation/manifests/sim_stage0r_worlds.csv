@@ -1,0 +1,5 @@
+world,seed,flipStrength,flipShare,routeDrift,routeDriftRho,nRoutes,nStable,nDrift,nFlip,nNoise
+s0r_rho0.50_w1,101,0,0.3571,0.4,0.5,2139,12,6,12,30
+s0r_rho0.50_w2,102,0,0.3571,0.4,0.5,2139,12,6,12,30
+s0r_rho0.95_w1,101,0,0.3571,0.4,0.95,2139,12,6,12,30
+s0r_rho0.95_w2,102,0,0.3571,0.4,0.95,2139,12,6,12,30
