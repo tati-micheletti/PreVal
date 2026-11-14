@@ -14,6 +14,9 @@
 #                    (units absent from the window count as 0 and fall in <=3). For caribou the "years" are the animal's years; its number of training STRATA is used for expTerc.
 #     expTerc        terciles (low / mid / high, ranks within the split's test cases, ties share a bin) of the exposure: route = number of training years, animal = number of training strata
 #     poolCat:yearsBin  the cross of the two
+#     lastGap        ADDED 2026-11-13 (recency cut): e - (last year the unit is observed inside the window s..e, validation year(s) included): g0 | g1 | g2-3 | g4+ | none (never observed).
+#                    g0 = the unit was observed in the window's final year, which new PreVal keeps out of training (validation) and the status quo trains on. Dimensions lastGap and
+#                    poolCat:lastGap; contrasts R1/R2 (g0 minus g2-3, g4+; within inBoth) predict POSITIVE at horizon 1 if the leftover deficit among units both models know is recency.
 #   Everything is first averaged within split, then within FORECAST YEAR (the unit of inference, as in analyzeRegimes.R: every split x level x replicate row counts equally), and the
 #   across-year test is .yearTest() of modules/preValNN/R/analyzeRegimes.R (mean, t interval, exact sign-flip p, nPositive/nNegative years). Interval and p are reported only
 #   where >= 3 forecast years contribute. Horizon bins as in analyzeRegimes: 1, 2, 3-4, 5-9, 10+ (and "all").
@@ -140,7 +143,9 @@ aggCells <- function(dd) rbindlist(list(
   dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = poolCat)][, dimension := "poolCat"],
   dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = yearsBin)][, dimension := "yearsBin"],
   dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = expTerc)][, dimension := "expTerc"],
-  dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = paste(poolCat, yearsBin, sep = "|"))][, dimension := "poolCat:yearsBin"]), use.names = TRUE)
+  dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = paste(poolCat, yearsBin, sep = "|"))][, dimension := "poolCat:yearsBin"],
+  dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = lastGap)][, dimension := "lastGap"],                                         # ADDED 2026-11-13 (recency cut)
+  dd[, .(sumD = sum(d), sumSQ = sum(sq), sumPV = sum(pv), n = .N), by = .(level = paste(poolCat, lastGap, sep = "|"))][, dimension := "poolCat:lastGap"]), use.names = TRUE)   # ADDED 2026-11-13
 readTest <- function(f, cols) {
   x <- readRDS(f); setDT(x); if ("set" %in% names(x)) x <- x[set == "test"]
   miss <- setdiff(cols, names(x)); if (length(miss)) return(list(x = NULL, why = paste("column(s) missing:", paste(miss, collapse = ", "))))
@@ -160,6 +165,7 @@ processSplit <- function(sid) {
   if (exposure != "window" && is.null(trRows)) { addIss("exposure needs a manifest that is missing: split skipped"); return(list(acc = NULL, iss = rbindlist(iss), chk = NULL)) }
   cw <- if (is.null(trRows)) ci[year >= s0 & year <= e0 - v0] else ci[posOf(trRows)]
   et <- cw[, .(nYears = uniqueN(year), nStrata = .N), by = unit]
+  lastObs <- ci[year >= s0 & year <= e0, .(lastYr = max(year)), by = unit]        # ADDED 2026-11-13 (recency cut): last year the unit is observed inside the window (up to e0, i.e. incl. the validation year(s))
   trUnitsSQ <- if (!is.null(mSQ)) unique(ci$unit[posOf(mSQ$row[mSQ$set == "train"])]); trUnitsPV <- if (!is.null(mPV)) unique(ci$unit[posOf(mPV$row[mPV$set == "train"])])
   cols <- c("row", "unit", "seenUnit", lossTypes)
   for (i in seq_len(nrow(pr))) {
@@ -172,7 +178,9 @@ processSplit <- function(sid) {
     pv <- pv[ix]; if (!identical(as.character(sq$unit), as.character(pv$unit))) { addIss("same rows but different units (pair dropped)"); next }
     k <- match(sq$unit, et$unit); nY <- fifelse(is.na(k), 0L, et$nYears[k]); nS <- fifelse(is.na(k), 0L, et$nStrata[k])
     cs <- data.table(poolCat = fifelse(sq$seenUnit & pv$seenUnit, "inBoth", fifelse(sq$seenUnit, "sqOnly", fifelse(pv$seenUnit, "pvOnly", "inNeither"))),
-                     yearsBin = cutBin(nY), expTerc = tercile(if (unitKind == "animal") nS else nY))
+                     yearsBin = cutBin(nY), expTerc = tercile(if (unitKind == "animal") nS else nY),
+                     lastGap = { kL <- match(sq$unit, lastObs$unit); gp <- e0 - lastObs$lastYr[kL]                       # ADDED 2026-11-13 (recency cut): years between the unit's last observation in the window and the window end e0
+                                 fifelse(is.na(gp), "none", fifelse(gp <= 0, "g0", fifelse(gp == 1, "g1", fifelse(gp <= 3, "g2-3", "g4+")))) })
     chk[[length(chk) + 1L]] <- data.table(nTest = nrow(sq), sqSeenVsManifest = if (!is.null(trUnitsSQ)) sum(sq$seenUnit != (sq$unit %in% trUnitsSQ)) else NA_integer_,
                                           pvSeenVsManifest = if (!is.null(trUnitsPV)) sum(pv$seenUnit != (pv$unit %in% trUnitsPV)) else NA_integer_,
                                           sqTestRowsInManifest = if (!is.null(mSQ)) setequal(sq$row, mSQ$row[mSQ$set == "test"]) else NA, pvTestRowsInManifest = if (!is.null(mPV)) setequal(pv$row, mPV$row[mPV$set == "test"]) else NA)
@@ -193,7 +201,7 @@ processSplit <- function(sid) {
 
 # ---- run in chunks of splits (resumable) -----------------------------------------------------------------------------------------------------------------------------------------
 argsFile <- file.path(workDir, "args.rds"); argsNow <- list(runSQ = nrm(runSQ), runPV = nrm(runPV), sqRegime = sqRegime, pvRegime = pvRegime, lossTypes = lossTypes, exposure = exposure, unit = unitKind,
-                                                         chunkSplits = chunkSplits, splitIds = splitIds, nPairs = nrow(pairs), checkManifests = checkManifests)
+                                                         chunkSplits = chunkSplits, splitIds = splitIds, nPairs = nrow(pairs), checkManifests = checkManifests, codeVersion = "recency1")   # codeVersion ADDED 2026-11-13: chunks made before the recency cut are refused
 if (file.exists(argsFile)) { if (!identical(readRDS(argsFile), argsNow)) stop("--outDir/work holds chunks made with other arguments; use an empty --outDir or delete ", workDir) } else saveRDS(argsNow, argsFile)
 chunks <- split(splitIds, ceiling(seq_along(splitIds) / chunkSplits)); nCh <- length(chunks); tStart <- Sys.time(); pairsDone <- 0L
 for (j in seq_len(nCh)) {
@@ -225,8 +233,8 @@ ex <- Y[, .(meanSQ = mean(sq), meanPV = mean(pv), nCases = sum(nCases), meanCase
 cells <- merge(cells, ex, by = c("weighting", "lossType", "dimension", "level", "hBin"))
 cells[, shareOfCases := nCases / sum(nCases), by = .(weighting, lossType, dimension, hBin)]
 cells[, inferenceNote := fifelse(nYears < minYears, paste0("fewer than ", minYears, " forecast years: no interval or p"), "")]
-lvlOrder <- c("all", "inBoth", "sqOnly", "pvOnly", "inNeither", "<=3", "4-6", ">=7", "low", "mid", "high")
-dimOrder <- c("all", "poolCat", "yearsBin", "expTerc", "poolCat:yearsBin")
+lvlOrder <- c("all", "inBoth", "sqOnly", "pvOnly", "inNeither", "<=3", "4-6", ">=7", "low", "mid", "high", "g0", "g1", "g2-3", "g4+", "none")      # ADDED 2026-11-13: g0..none
+dimOrder <- c("all", "poolCat", "yearsBin", "expTerc", "poolCat:yearsBin", "lastGap", "poolCat:lastGap")                                           # ADDED 2026-11-13: lastGap, poolCat:lastGap
 cells[, `:=`(dimension = factor(dimension, dimOrder), hBin = factor(hBin, HB))]
 cells <- cells[order(weighting, lossType, dimension, hBin, match(sub("\\|.*$", "", level), lvlOrder), match(sub("^.*\\|", "", level), lvlOrder))][, `:=`(dimension = as.character(dimension), hBin = as.character(hBin))]
 setnames(cells, c("hBin", "estimate", "lo", "hi"), c("horizonBin", "meanDiff", "ciLo", "ciHi"))
@@ -239,7 +247,11 @@ cdef <- rbindlist(list(
   data.table(dimension = "yearsBin", a = "4-6", b = "<=3", label = "4-6 years minus <=3 years"),
   data.table(dimension = "expTerc", a = "high", b = "low", label = paste0("M3 (tercile): high minus low ", expWord)),
   data.table(dimension = "poolCat:yearsBin", a = paste0("sqOnly|", c("<=3", "4-6", ">=7")), b = paste0("inBoth|", c("<=3", "4-6", ">=7")), label = paste0("sqOnly minus inBoth within ", c("<=3", "4-6", ">=7"), " years")),
-  data.table(dimension = "poolCat:yearsBin", a = c("inBoth|>=7", "sqOnly|>=7"), b = c("inBoth|<=3", "sqOnly|<=3"), label = c(">=7 minus <=3 years within inBoth", ">=7 minus <=3 years within sqOnly"))))
+  data.table(dimension = "poolCat:yearsBin", a = c("inBoth|>=7", "sqOnly|>=7"), b = c("inBoth|<=3", "sqOnly|<=3"), label = c(">=7 minus <=3 years within inBoth", ">=7 minus <=3 years within sqOnly")),
+  # ADDED 2026-11-13 (recency cut): R1/R2 predict POSITIVE at horizon 1 if the leftover deficit is recency (the status quo saw the unit's newest year, new PreVal kept it for validation)
+  data.table(dimension = "lastGap", a = c("g0", "g0"), b = c("g2-3", "g4+"), label = c("R1: last seen in the final window year (g0) minus 2-3 years before (g2-3), all cases", "R1b: g0 minus g4+, all cases")),
+  data.table(dimension = "poolCat:lastGap", a = c("inBoth|g0", "inBoth|g0", "inBoth|g1"), b = c("inBoth|g2-3", "inBoth|g4+", "inBoth|g2-3"),
+             label = c("R2: within inBoth, g0 minus g2-3", "R2b: within inBoth, g0 minus g4+", "R2c: within inBoth, g1 minus g2-3"))))
 cc <- rbindlist(lapply(seq_len(nrow(cdef)), function(i) {
   w <- dcast(Y[dimension == cdef$dimension[i] & level %in% c(cdef$a[i], cdef$b[i])], weighting + lossType + hBin + testYear ~ level, value.var = "v")
   if (!all(c(cdef$a[i], cdef$b[i]) %in% names(w))) return(NULL)
@@ -293,7 +305,9 @@ for (L in unique(mainCells$lossType)) {
   S <- c(S, sec("A. ALL CASES (anchor: compare with the headline by horizon in analyzeRegimes output; the headline is the unweighted-split mean per forecast year)", "all"),
          sec("B. POOL MEMBERSHIP (M4: sqOnly = trained by the status quo, set aside by new PreVal)", "poolCat"),
          sec("C. TRAINING YEARS OF THE UNIT IN THE WINDOW (M3)", "yearsBin"),
-         sec(sprintf("D. TERCILES OF %s (within split)", toupper(expWord)), "expTerc"))
+         sec(sprintf("D. TERCILES OF %s (within split)", toupper(expWord)), "expTerc"),
+         sec("F. RECENCY (ADDED 2026-11-13): years between the unit's last observation in the window and the window end (g0 = observed in the final window year, which new PreVal keeps out of training for validation; none = never observed in the window)", "lastGap"),
+         sec("G. RECENCY inside inBoth (both models were trained on the unit)", "poolCat:lastGap", pick = paste0("inBoth|", c("g0", "g1", "g2-3", "g4+"))))
   cx <- cc[lossType == L & weighting == "splitEqual"]
   if (nrow(cx)) { S <- c(S, "", "E. WITHIN-YEAR DIFFERENCES BETWEEN CELLS (M3 and M4 predict POSITIVE at horizon 1: the deficit is larger in the first-named cell)")
     for (cn in unique(cx$contrast)) { S <- c(S, paste0(" ", cn)); x <- cx[contrast == cn]
