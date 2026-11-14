@@ -3,6 +3,7 @@
 # A STAGE (smoke | stage0 | stage1a) is a table of WORLDS (generator parameters) and a table of UNITS (one engine run = world x ladder order x design), plus the engine settings (PREVAL_* values).
 # The three tables are written to simulation/manifests/sim_<stage>_{worlds,units,engine}.csv by `manifest`; EVE and local runs read those files, so what runs is what is checked in.
 #   stage0   realism anchor (section 3a): 5 worlds without flips (phi = 0), natural ladder, same-places and new-places designs, regimes PreVal (FutureUnseenGrouped), status quo, spatial CV, PreVal + spatial.
+#   stage0d  (added 2026-11-14) anchor with route drift: stage-0 worlds 1 and 2 (seeds 101, 102) with route drift sd 0.2 / 0.4 (rho 0.82; sd 0.6 dropped 2026-11-14, outside the marginal anchor), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage1a  F1 x F2 x F3: phi 0 / 0.85 / 1 x flip share 0.10 / 0.30 x ladder order natural / flippersFirst / flippersLast / random, 5 replicate worlds per (phi, share), same-places design, PreVal vs status quo.
 #   stage1d  (Tweety, added 2026-11-05) route-level drift: drift off / moderate (AR(1), sd 0.4, 1/e in 5 years) x phi 0 / 0.85 x flip share 0.30, 5 replicates, natural ladder, same places, PreVal vs status quo, horizons 1, 3, 5, 10.
 #   swap     (Tweety, added 2026-11-05) causal swap test: phi 0 / 0.85 / 1 at flip share 0.30, 5 replicates, ladders oracle and oracleSwap (flippers and stable covariates exchanged at the same ladder positions), same places.
@@ -44,9 +45,13 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
-  if (stage == "stage0") {
+  if (stage == "stage0d") {      # ADDED 2026-11-14 (anchor change after stage 0, ANALYSIS_PLAN_SIMULATION.md section 9d): the stage-0 worlds 1 and 2 (same seeds 101, 102, so paired with the drift-off result) with route drift sd 0.2 / 0.4 (0.6 dropped, see 9d), both designs, 4 regimes
+    W <- CJ(dr = c(0.2, 0.4), w = 1:2); W[, `:=`(world = sprintf("s0d_dr%.1f_w%d", dr, w), seed = 100L + w, flipStrength = 0, flipShare = 0.3571, routeDrift = dr)]; W[, c("dr", "w") := NULL]
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
+    U <- makeUnits(W, "natural", c("same", "new"), REG4, REG4); E <- FULL_ENGINE
+  } else if (stage == "stage0") {
     W <- data.table(world = sprintf("s0_w%d", 1:5), seed = 100L + 1:5, flipStrength = 0, flipShare = 0.3571); for (n in names(base)) W[[n]] <- base[[n]]
     U <- makeUnits(W, "natural", c("same", "new"), REG4, REG4); E <- FULL_ENGINE
   } else if (stage == "stage1a") {

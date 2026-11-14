@@ -4,6 +4,7 @@
 # every step starts only when ALL tasks of the step before it have finished OK (--dependency=afterok, --kill-on-invalid-dep=yes), so a failure cancels the rest instead of leaving a half-finished chain.
 # What the steps do is in simulation/run_worlds.R; the worlds, units and engine settings are the checked-in files simulation/manifests/sim_<stage>_{worlds,units,engine}.csv.
 #   Stage 0 (realism anchor): 5 worlds without flips x natural ladder x 2 designs (same places, new places), 4 regimes. 10 units x 3,180 models = 31,800 models.
+#   Stage 0d (anchor + drift): stage-0 worlds 1 and 2 with route drift sd 0.2 / 0.4 x 2 designs x 4 regimes (added 2026-11-14). 8 units x 3,180 models = 25,440 models.
 #   Stage 1a:                 30 worlds (phi 0/0.85/1 x flip share 0.10/0.30 x 5 replicates) x 4 ladder orders, same places, 2 regimes. 120 units x 1,590 models = 190,800 models.
 #   Stage 1d (route drift):   20 worlds (drift off/moderate x phi 0/0.85 x 5 replicates) x natural ladder, horizons 1,3,5,10, 2 regimes. 20 units x 2,520 models = 50,400 models.
 #   Swap (causal swap test):  15 worlds (phi 0/0.85/1 x 5 replicates) x ladders oracle and oracleSwap, 2 regimes. 30 units x 1,590 models = 47,700 models.
@@ -12,14 +13,14 @@
 #   SIM_STAGE=stage0  bash eve/submit_sim.sh
 #   SIM_STAGE=stage1a bash eve/submit_sim.sh        (also stage1d, swap, smoke)
 #   DRYRUN=1 SIM_STAGE=stage0 bash eve/submit_sim.sh       prints the sbatch commands (and the settings file) instead of submitting
-# Options (environment variables): MEM_PREP (default 10G), MEM_RANK, MEM_TRAIN (3G), MEM_ANALYZE (4G), TRAIN_TIME, RANK_TIME, PREP_TIME, TRAIN_SLICES, RANK_SLICES, MAXPAR_TRAIN, EVE_PARTITION, SIM_ROOT (default /data/birds/PreVal/simulation/<stage>),
+# Options (environment variables): MEM_PREP (default 5G), MEM_RANK (2G), MEM_TRAIN (2G), MEM_ANALYZE (4G), TRAIN_TIME, RANK_TIME, PREP_TIME, TRAIN_SLICES, RANK_SLICES, MAXPAR_TRAIN, EVE_PARTITION, SIM_ROOT (default /data/birds/PreVal/simulation/<stage>),
 # plus any PREVAL_* engine setting (e.g. PREVAL_EPOCHS), which wins over the manifest. Memory, time and array sizes below are ESTIMATES from local timings (see simulation/ANALYSIS_PLAN_SIMULATION.md section 10) until measured on EVE
 # (sacct -j <jobid> --format=JobID,Elapsed,MaxRSS,State, then tighten). Finished models, rankings and worlds are skipped, so running it again after a failure never repeats work.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 USER="${USER:-${USERNAME:-user}}"      # only needed for the local dry run (Git Bash has no USER)
 : "${SIM_STAGE:?set SIM_STAGE to stage0, stage1a or smoke}"
-case "${SIM_STAGE}" in stage0|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage1a, stage1d, swap or smoke"; exit 1;; esac
+case "${SIM_STAGE}" in stage0|stage0d|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage0d, stage1a, stage1d, swap or smoke"; exit 1;; esac      # stage0d ADDED 2026-11-14
 MAN="simulation/manifests/sim_${SIM_STAGE}"
 for f in "${MAN}_worlds.csv" "${MAN}_units.csv" "${MAN}_engine.csv" simulation/run_worlds.R simulation/simulate_world.R birds/runMe_birds.R eve/eve_sim_task.sbatch eve/eve_env.sh; do
   [ -f "$f" ] || { echo "MISSING: $f  (the manifests are made by: Rscript simulation/run_worlds.R manifest ${SIM_STAGE}; commit and pull them)"; exit 1; }
@@ -32,13 +33,14 @@ NCOPY=$(awk -F, 'NR>1 && $9!="\"\"" && $9!="" {n++} END{print n+0}' "${MAN}_unit
 # ---- per-stage defaults (ESTIMATES): train slices per unit and time; memory per core
 case "${SIM_STAGE}" in
   stage0)  D_TSLICES=8;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;      # 3,180 models x ~14.5 s = 12.8 h per unit -> ~1.6 h per task
-  stage1a) D_TSLICES=4;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=80;;      # 1,590 models = 6.4 h per unit -> ~1.6 h per task
+  stage0d) D_TSLICES=10; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=80;;      # ADDED 2026-11-14: 3,180 models per unit as in stage 0, 10 slices (about 1.3 h per task), 8 h limit (stage 0: median 1.3 h, 2 of 80 tasks hit the 4 h limit)
+  stage1a) D_TSLICES=4;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=80;;     # 1,590 models = 6.4 h per unit -> ~1.6 h per task
   stage1d) D_TSLICES=6;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;      # 2,520 models = 10.1 h per unit -> ~1.7 h per task
   swap)    D_TSLICES=4;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;
   smoke)   D_TSLICES=2;  D_TTIME=00:30:00; D_RSLICES=2; D_MAXPAR=4;;
 esac
 TSLICES="${TRAIN_SLICES:-${D_TSLICES}}"; RSLICES="${RANK_SLICES:-${D_RSLICES}}"; MAXPAR="${MAXPAR_TRAIN:-${D_MAXPAR}}"
-MEM_PREP="${MEM_PREP:-10G}"; MEM_RANK="${MEM_RANK:-3G}"; MEM_TRAIN="${MEM_TRAIN:-3G}"; MEM_ANALYZE="${MEM_ANALYZE:-4G}"      # ESTIMATES: local peaks were 5.9 GB (prep), 1.0 GB (rank), 0.8 GB (train), 0.5 GB (analyze)
+MEM_PREP="${MEM_PREP:-5G}"; MEM_RANK="${MEM_RANK:-2G}"; MEM_TRAIN="${MEM_TRAIN:-2G}"; MEM_ANALYZE="${MEM_ANALYZE:-4G}"      # CHANGED 2026-11-13: prep 10G -> 5G (measured on EVE, stage 0: prep peak 1.2 GB, rank peak 1.3 GB). CHANGED 2026-11-14: rank and train 3G -> 2G (measured peaks 1.2 GB and 0.87 GB, simulation/RESOURCE_LEDGER.md); analyze stays 4G until measured
 export PREVAL_DATASET=birds
 export SIM_STAGE
 export SIM_ROOT="${SIM_ROOT:-/data/birds/PreVal/simulation/${SIM_STAGE}}"
