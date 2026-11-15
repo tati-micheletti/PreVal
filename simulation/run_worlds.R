@@ -5,6 +5,7 @@
 #   stage0   realism anchor (section 3a): 5 worlds without flips (phi = 0), natural ladder, same-places and new-places designs, regimes PreVal (FutureUnseenGrouped), status quo, spatial CV, PreVal + spatial.
 #   stage0d  (added 2026-11-14) anchor with route drift: stage-0 worlds 1 and 2 (seeds 101, 102) with route drift sd 0.2 / 0.4 (rho 0.82; sd 0.6 dropped 2026-11-14, outside the marginal anchor), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage0r  (added 2026-11-14) fade rate of the route drift: worlds 1 and 2 at drift sd 0.4 with rho 0.5 (fast) and 0.95 (slow), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
+#   stage0n  (added 2026-11-15) non-stationary route level + less count noise + persistent surveys (plan section 9g): worlds 1 and 2 (seeds 101, 102) with all three changes, plus two ablations of world 1 (walk only; less noise and persistent surveys without the walk), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage1a  F1 x F2 x F3: phi 0 / 0.85 / 1 x flip share 0.10 / 0.30 x ladder order natural / flippersFirst / flippersLast / random, 5 replicate worlds per (phi, share), same-places design, PreVal vs status quo.
 #   stage1d  (Tweety, added 2026-11-05) route-level drift: drift off / moderate (AR(1), sd 0.4, 1/e in 5 years) x phi 0 / 0.85 x flip share 0.30, 5 replicates, natural ladder, same places, PreVal vs status quo, horizons 1, 3, 5, 10.
 #   swap     (Tweety, added 2026-11-05) causal swap test: phi 0 / 0.85 / 1 at flip share 0.30, 5 replicates, ladders oracle and oracleSwap (flippers and stable covariates exchanged at the same ladder positions), same places.
@@ -46,9 +47,14 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
-  if (stage == "stage0r") {      # ADDED 2026-11-14 (fade rate of the route drift, ANALYSIS_PLAN_SIMULATION.md section 9e): worlds 1 and 2 (seeds 101, 102) at route drift sd 0.4 with year-to-year autocorrelation rho 0.5 (fast) and 0.95 (slow); rho 0.82 is stage0d's dr0.4
+  if (stage == "stage0n") {      # ADDED 2026-11-15 (ANALYSIS_PLAN_SIMULATION.md section 9g): random-walk route level (sd 0.23 per year, calibrated to the real greenfinch variogram), count noise scale 0.55, survey persistence 0.70; the two ablations isolate the walk and the other two changes
+    W <- data.table(world = c("s0n_full_w1", "s0n_full_w2", "s0n_walk_w1", "s0n_noiseSurvey_w1"), seed = c(101L, 102L, 101L, 101L), flipStrength = 0, flipShare = 0.3571,
+                    routeWalkSd = c(0.23, 0.23, 0.23, 0), noiseScale = c(0.55, 0.55, 1, 0.55), surveyRho = c(0.70, 0.70, 0, 0.70))
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
+    U <- makeUnits(W, "natural", c("same", "new"), REG4, REG4); E <- FULL_ENGINE
+  } else if (stage == "stage0r") {      # ADDED 2026-11-14 (fade rate of the route drift, ANALYSIS_PLAN_SIMULATION.md section 9e): worlds 1 and 2 (seeds 101, 102) at route drift sd 0.4 with year-to-year autocorrelation rho 0.5 (fast) and 0.95 (slow); rho 0.82 is stage0d's dr0.4
     W <- CJ(rho = c(0.5, 0.95), w = 1:2); W[, `:=`(world = sprintf("s0r_rho%.2f_w%d", rho, w), seed = 100L + w, flipStrength = 0, flipShare = 0.3571, routeDrift = 0.4, routeDriftRho = rho)]; W[, c("rho", "w") := NULL]
     for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
     U <- makeUnits(W, "natural", c("same", "new"), REG4, REG4); E <- FULL_ENGINE
@@ -93,6 +99,7 @@ outDir <- function(stage) { v <- Sys.getenv("PREVAL_OUT", ""); if (nzchar(v)) v 
 worldParams <- function(row) {
   p <- modifyList(anchorWorldParams(), list(seed = as.integer(row$seed), flipStrength = row$flipStrength, nRoutes = as.integer(row$nRoutes), nStable = as.integer(row$nStable), nDrift = as.integer(row$nDrift), nFlip = as.integer(row$nFlip), nNoise = as.integer(row$nNoise), routeDrift = if (!is.null(row$routeDrift)) row$routeDrift else 0))
   if (!is.null(row$routeDriftRho) && !is.na(row$routeDriftRho)) p$routeDriftRho <- row$routeDriftRho      # ADDED 2026-11-14: optional column of the worlds table (stage0r); without it the generator default exp(-1/5) is used, as before
+  for (n in c("routeWalkSd", "noiseScale", "surveyRho")) if (!is.null(row[[n]]) && !is.na(row[[n]])) p[[n]] <- row[[n]]      # ADDED 2026-11-15: optional columns of the worlds table (stage0n); without them the generator defaults (all off) are used, as before
   p$shares <- flipShares(row$flipShare); p
 }
 # SIMULATION-ONLY ladder files in the folder of the world (the engine reads featureTable_<ladder>.csv with PREVAL_LADDER=<ladder>); natural needs no file (per-window rankings)

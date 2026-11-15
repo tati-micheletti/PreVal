@@ -33,7 +33,14 @@ defaultWorldParams <- function() list(
   # CHANGED 2026-11-05: route-level drift (default off). The stable level of a route is no longer constant: log-mean of route i in year t = route effect + d[i, t], d an AR(1) process per route with stationary sd `routeDrift`
   # (log scale; 0 = off: the world is then identical to the one without this option) and year-to-year autocorrelation `routeDriftRho` (exp(-1/5) = 0.82: the autocorrelation decays to 1/e in about 5 years). Covariates cannot explain it,
   # so a model that memorises the route level goes stale with the horizon: the test of the "stale memory" explanation with known truth. Its own seeded stream: switching it on changes only the counts (matched worlds).
-  routeDrift = 0, routeDriftRho = exp(-1 / 5)
+  routeDrift = 0, routeDriftRho = exp(-1 / 5),
+  # CHANGED 2026-11-15 (stage 0n, plan section 9g): three generator options, all OFF by default (the world is then identical to the one without them).
+  #   routeWalkSd   NON-stationary route level: log-mean of route i in year t gets a random walk W[i, t] with step sd `routeWalkSd` per year (log scale). Unlike routeDrift (AR(1), mean-reverting: the long-run mean of the route always stays
+  #                 recoverable) the walk never returns, so a route's old level keeps getting less informative as the years pass. W is 0 in the year `routeWalkPin` (default NA = the middle year, which keeps the pooled marginals of the
+  #                 anchor; 1 = start of the series) and extends in both directions from there.
+  #   noiseScale    scale of the count noise around the mean: count = round(mu + noiseScale * (NB count - mu)), 1 = off. Real counts are less noisy from one year to the next than negative-binomial (theta 15) counts (plan 9f).
+  #   surveyRho     persistence of the survey: a route is surveyed or not in a Markov chain over the years with the same stationary probability p as before and lag-1 autocorrelation surveyRho (0 = independent years, as before).
+  routeWalkSd = 0, routeWalkPin = NA_integer_, noiseScale = 1, surveyRho = 0
 )
 
 # CHANGED 2026-11-05: the calibrated birds-type realism anchor (parameter set found in simulation/sim_calibrate_anchor.R, section 9 of the analysis plan); defaultWorldParams() stays the generic world of the unit tests.
@@ -62,14 +69,18 @@ anchorWorldParams <- function() utils::modifyList(defaultWorldParams(), list(
 simulateWorld <- function(params = list()) {
   P <- utils::modifyList(defaultWorldParams(), params)
   stopifnot(P$flipMode %in% c("random", "regime"), P$regimeLength >= 1, P$flipStrength >= 0, P$flipStrength <= 1, P$flipProb >= 0, P$flipProb <= 1, P$yearShare >= 0, P$yearShare < 1, all(P$shares >= 0),
-            P$routeDist %in% c("lognormal", "beta"), P$routeDrift >= 0, P$routeDriftRho >= 0, P$routeDriftRho < 1, all(P$routeBeta > 0), all(c("a", "b") %in% names(P$routeBeta)))
+            P$routeDist %in% c("lognormal", "beta"), P$routeDrift >= 0, P$routeDriftRho >= 0, P$routeDriftRho < 1, P$routeWalkSd >= 0, P$noiseScale > 0, P$noiseScale <= 1, P$surveyRho >= 0, P$surveyRho < 1, all(P$routeBeta > 0), all(c("a", "b") %in% names(P$routeBeta)))
   shr <- P$shares; if (identical(P$routeDist, "beta")) shr[["route"]] <- 0      # CHANGED 2026-11-05: lighter-tailed route effect: no route share, the route multiplier is Beta (see defaultWorldParams)
   sh <- shr / sum(shr); V <- P$etaSd^2; yrs <- as.integer(P$years); nY <- length(yrs); sd0 <- P$seed * 1000L
   # --- routes and surveys
   rt <- .seeded(sd0 + 1L, data.table::data.table(route = sprintf("s%04d", seq_len(P$nRoutes)), x = stats::runif(P$nRoutes, P$box[["xmin"]], P$box[["xmax"]]), y = stats::runif(P$nRoutes, P$box[["ymin"]], P$box[["ymax"]]),
                                                  p = stats::rbeta(P$nRoutes, 4 * P$surveyProb, 4 * (1 - P$surveyProb))))
   ell <- P$rangeKm * 1000
-  tab <- .seeded(sd0 + 2L, { g <- data.table::CJ(route = rt$route, year = yrs, sorted = FALSE); g[rt, on = "route", p := i.p]; g[stats::runif(.N) < p][, p := NULL] })
+  tab <- if (P$surveyRho > 0) .seeded(sd0 + 2L, {      # CHANGED 2026-11-15: persistent survey (Markov chain per route, stationary probability p, lag-1 autocorrelation surveyRho)
+    nr <- nrow(rt); uu <- matrix(stats::runif(nr * nY), nr, nY); S <- matrix(FALSE, nr, nY); S[, 1] <- uu[, 1] < rt$p
+    for (t in seq_len(nY)[-1]) S[, t] <- uu[, t] < ifelse(S[, t - 1], rt$p + P$surveyRho * (1 - rt$p), rt$p * (1 - P$surveyRho))
+    data.table::data.table(route = rt$route[row(S)[S]], year = yrs[col(S)[S]])
+  }) else .seeded(sd0 + 2L, { g <- data.table::CJ(route = rt$route, year = yrs, sorted = FALSE); g[rt, on = "route", p := i.p]; g[stats::runif(.N) < p][, p := NULL] })
   rt <- rt[route %in% tab$route]; rt[, ri := seq_len(.N)]; tab[rt, on = "route", `:=`(ri = i.ri, x = i.x, y = i.y)]
   data.table::setorder(tab, route, year); n <- nrow(tab); yi <- match(tab$year, yrs); u01 <- (yi - 1) / max(1, nY - 1); u <- 2 * u01 - 1
   # --- covariates
@@ -111,9 +122,18 @@ simulateWorld <- function(params = list()) {
     dm <- .seeded(sd0 + 4500L, { z <- matrix(stats::rnorm(nrow(rt) * nY), nrow(rt), nY); d <- z; d[, 1] <- z[, 1]; for (t in seq_len(nY)[-1]) d[, t] <- P$routeDriftRho * d[, t - 1] + sqrt(1 - P$routeDriftRho^2) * z[, t]; P$routeDrift * d })
     dm[cbind(tab$ri, yi)]
   } else rep(0, n)
-  eta <- cs$stable$v + cs$drift$v + cs$flip$v + route + yEff + routeDriftV
+  routeWalkV <- if (P$routeWalkSd > 0) {      # CHANGED 2026-11-15: non-stationary route level (random walk per route, 0 in the pinned year, own seeded stream)
+    pin <- if (is.na(P$routeWalkPin)) ceiling((nY + 1) / 2) else as.integer(P$routeWalkPin)
+    wm <- .seeded(sd0 + 4600L, { z <- P$routeWalkSd * matrix(stats::rnorm(nrow(rt) * nY), nrow(rt), nY); W <- matrix(0, nrow(rt), nY)
+      for (t in seq_len(nY)[seq_len(nY) > pin]) W[, t] <- W[, t - 1] + z[, t]
+      for (t in rev(seq_len(nY)[seq_len(nY) < pin])) W[, t] <- W[, t + 1] + z[, t]
+      W })
+    wm[cbind(tab$ri, yi)]
+  } else rep(0, n)
+  eta <- cs$stable$v + cs$drift$v + cs$flip$v + route + yEff + routeDriftV + routeWalkV
   b0 <- log(P$meanCount) - log(mean(exp(eta))); mu <- exp(b0 + eta)
   cnt <- .seeded(sd0 + 6000L, stats::rnbinom(n, mu = mu, size = P$theta))
+  if (P$noiseScale < 1) cnt <- pmax(0, round(mu + P$noiseScale * (cnt - mu)))      # CHANGED 2026-11-15: less count noise than negative binomial (see noiseScale)
   # --- table in the engine's format: neutral names, shuffled column order
   ord <- .seeded(sd0 + 7000L, sample(p))                                  # position j of the family order gets the neutral name sim_cov_<ord[j]>
   colnames(Z) <- sprintf("sim_cov_%03d", ord)
@@ -124,7 +144,7 @@ simulateWorld <- function(params = list()) {
   famTab[, coefficient := coefs * scl[fam]]
   trueBeta <- B * scl[fam]; dimnames(trueBeta) <- list(famTab$covariate, yrs)
   list(table = final[], params = P, covariates = famTab[], trueBeta = trueBeta, flipSigns = `dimnames<-`(S, list(famTab$covariate[flipIx], yrs)),
-       contributions = data.table::data.table(SITE_ID = tab$route, year = tab$year, stable = cs$stable$v, drift = cs$drift$v, flip = cs$flip$v, route = route, year_effect = yEff, route_drift = routeDriftV, eta = eta, mu = mu),
+       contributions = data.table::data.table(SITE_ID = tab$route, year = tab$year, stable = cs$stable$v, drift = cs$drift$v, flip = cs$flip$v, route = route, year_effect = yEff, route_drift = routeDriftV, route_walk = routeWalkV, eta = eta, mu = mu),
        intercept = b0)
 }
 
