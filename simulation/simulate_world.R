@@ -40,7 +40,10 @@ defaultWorldParams <- function() list(
   #                 anchor; 1 = start of the series) and extends in both directions from there.
   #   noiseScale    scale of the count noise around the mean: count = round(mu + noiseScale * (NB count - mu)), 1 = off. Real counts are less noisy from one year to the next than negative-binomial (theta 15) counts (plan 9f).
   #   surveyRho     persistence of the survey: a route is surveyed or not in a Markov chain over the years with the same stationary probability p as before and lag-1 autocorrelation surveyRho (0 = independent years, as before).
-  routeWalkSd = 0, routeWalkPin = NA_integer_, noiseScale = 1, surveyRho = 0
+  routeWalkSd = 0, routeWalkPin = NA_integer_, noiseScale = 1, surveyRho = 0,
+  # CHANGED 2026-11-16 (stage 0c, plan sections 9i and 9j): routeFromCov = g in [0, 1): the Gaussian route field (before the Beta rank transform) is sqrt(g) * (standardised linear combination of the STATIC route-level parts of the stable covariates,
+  # coefficients of the stable family) + sqrt(1 - g) * the field of before. 0 = off (the world is unchanged). Reason: in the real data the covariates explain about half of the between-route variance out of sample, in the simulation 2-6 % (plan 9i).
+  routeFromCov = 0
 )
 
 # CHANGED 2026-11-05: the calibrated birds-type realism anchor (parameter set found in simulation/sim_calibrate_anchor.R, section 9 of the analysis plan); defaultWorldParams() stays the generic world of the unit tests.
@@ -69,7 +72,7 @@ anchorWorldParams <- function() utils::modifyList(defaultWorldParams(), list(
 simulateWorld <- function(params = list()) {
   P <- utils::modifyList(defaultWorldParams(), params)
   stopifnot(P$flipMode %in% c("random", "regime"), P$regimeLength >= 1, P$flipStrength >= 0, P$flipStrength <= 1, P$flipProb >= 0, P$flipProb <= 1, P$yearShare >= 0, P$yearShare < 1, all(P$shares >= 0),
-            P$routeDist %in% c("lognormal", "beta"), P$routeDrift >= 0, P$routeDriftRho >= 0, P$routeDriftRho < 1, P$routeWalkSd >= 0, P$noiseScale > 0, P$noiseScale <= 1, P$surveyRho >= 0, P$surveyRho < 1, all(P$routeBeta > 0), all(c("a", "b") %in% names(P$routeBeta)))
+            P$routeDist %in% c("lognormal", "beta"), P$routeDrift >= 0, P$routeDriftRho >= 0, P$routeDriftRho < 1, P$routeWalkSd >= 0, P$noiseScale > 0, P$noiseScale <= 1, P$surveyRho >= 0, P$surveyRho < 1, P$routeFromCov >= 0, P$routeFromCov < 1, all(P$routeBeta > 0), all(c("a", "b") %in% names(P$routeBeta)))
   shr <- P$shares; if (identical(P$routeDist, "beta")) shr[["route"]] <- 0      # CHANGED 2026-11-05: lighter-tailed route effect: no route share, the route multiplier is Beta (see defaultWorldParams)
   sh <- shr / sum(shr); V <- P$etaSd^2; yrs <- as.integer(P$years); nY <- length(yrs); sd0 <- P$seed * 1000L
   # --- routes and surveys
@@ -85,11 +88,11 @@ simulateWorld <- function(params = list()) {
   data.table::setorder(tab, route, year); n <- nrow(tab); yi <- match(tab$year, yrs); u01 <- (yi - 1) / max(1, nY - 1); u <- 2 * u01 - 1
   # --- covariates
   fam <- rep(c("stable", "drift", "flip", "noise"), c(P$nStable, P$nDrift, P$nFlip, P$nNoise)); p <- length(fam)
-  Z <- matrix(0, n, p); trendSign <- rep(1, p)
+  Z <- matrix(0, n, p); trendSign <- rep(1, p); statL <- vector("list", P$nStable + P$nDrift + P$nFlip + P$nNoise)      # statL (2026-11-16): route-level static part of each covariate, kept for routeFromCov
   for (j in seq_len(p)) {
     s <- P$staticShare[[fam[j]]]; yw <- P$yearShare * (1 - s); ew <- max(0, 1 - s - yw)
     stat <- .seeded(sd0 + 100L + j, sqrt(P$routeSpatialShare) * .field(rt$x, rt$y, ell, sd0 + 100L + j) + sqrt(1 - P$routeSpatialShare) * stats::rnorm(nrow(rt)))
-    g <- .seeded(sd0 + 400L + j, stats::rnorm(nY)); e <- .seeded(sd0 + 700L + j, stats::rnorm(n))
+    statL[[j]] <- stat; g <- .seeded(sd0 + 400L + j, stats::rnorm(nY)); e <- .seeded(sd0 + 700L + j, stats::rnorm(n))
     z <- .std(sqrt(s) * .std(stat)[tab$ri] + sqrt(yw) * .std(g)[yi] + sqrt(ew) * e)
     if (P$trend != 0 && fam[j] %in% P$trendFamilies) { trendSign[j] <- .seeded(sd0 + 1000L + j, sample(c(-1, 1), 1L)); z <- z + P$trend * (u01 - 0.5) * trendSign[j] }
     Z[, j] <- z
@@ -114,6 +117,9 @@ simulateWorld <- function(params = list()) {
   scaleTo <- function(v, target) { sdv <- stats::sd(v); if (target <= 0 || sdv == 0) list(v = rep(0, n), k = 0) else list(v = v * sqrt(target * V) / sdv, k = sqrt(target * V) / sdv) }
   cs <- lapply(c("stable", "drift", "flip"), function(f) scaleTo(raw(f), sh[[f]])); names(cs) <- c("stable", "drift", "flip")
   rr <- .seeded(sd0 + 4000L, .std(sqrt(P$routeSpatialShare) * .field(rt$x, rt$y, ell, sd0 + 4001L) + sqrt(1 - P$routeSpatialShare) * stats::rnorm(nrow(rt))))
+  if (P$routeFromCov > 0) {      # CHANGED 2026-11-16: route field partly a function of the static parts of the stable covariates (see routeFromCov)
+    Sc <- Reduce(`+`, lapply(which(fam == "stable"), function(j) coefs[j] * .std(statL[[j]]))); rr <- .std(sqrt(P$routeFromCov) * .std(Sc) + sqrt(1 - P$routeFromCov) * rr)
+  }
   route <- if (identical(P$routeDist, "beta")) {      # CHANGED 2026-11-05: lighter-tailed route effect: rank-transform the spatial Gaussian route field to a Beta marginal (multiplier on the mean, mean 1), log-scale in eta
     mB <- stats::qbeta(rank(rr, ties.method = "first") / (length(rr) + 1), P$routeBeta[["a"]], P$routeBeta[["b"]]); mB <- mB / mean(mB); log(mB)[tab$ri]
   } else scaleTo(rr[tab$ri], sh[["route"]])$v

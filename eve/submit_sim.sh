@@ -7,6 +7,7 @@
 #   Stage 0d (anchor + drift): stage-0 worlds 1 and 2 with route drift sd 0.2 / 0.4 x 2 designs x 4 regimes (added 2026-11-14). 8 units x 3,180 models = 25,440 models.
 #   Stage 0r (drift fade rate): worlds 1 and 2 at drift sd 0.4 with rho 0.5 and 0.95 x 2 designs x 4 regimes (added 2026-11-14). 8 units x 3,180 models = 25,440 models.
 #   Stage 0n (non-stationary route level, less noise, persistent surveys): worlds 1 and 2 with all three changes + two ablations of world 1 x 2 designs x 4 regimes (added 2026-11-15). 8 units x 3,180 models = 25,440 models.
+#   Stage 0c (route level partly explained by covariates + walk + less noise): worlds 1 and 2 with all changes + two ablations of world 1 x 2 designs x 4 regimes (added 2026-11-16). 8 units x 3,180 models = 25,440 models.
 #   Stage 1a:                 30 worlds (phi 0/0.85/1 x flip share 0.10/0.30 x 5 replicates) x 4 ladder orders, same places, 2 regimes. 120 units x 1,590 models = 190,800 models.
 #   Stage 1d (route drift):   20 worlds (drift off/moderate x phi 0/0.85 x 5 replicates) x natural ladder, horizons 1,3,5,10, 2 regimes. 20 units x 2,520 models = 50,400 models.
 #   Swap (causal swap test):  15 worlds (phi 0/0.85/1 x 5 replicates) x ladders oracle and oracleSwap, 2 regimes. 30 units x 1,590 models = 47,700 models.
@@ -22,7 +23,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 USER="${USER:-${USERNAME:-user}}"      # only needed for the local dry run (Git Bash has no USER)
 : "${SIM_STAGE:?set SIM_STAGE to stage0, stage1a or smoke}"
-case "${SIM_STAGE}" in stage0|stage0d|stage0r|stage0n|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage0d, stage0r, stage0n, stage1a, stage1d, swap or smoke"; exit 1;; esac      # stage0d ADDED 2026-11-14
+case "${SIM_STAGE}" in stage0|stage0d|stage0r|stage0n|stage0c|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage0d, stage0r, stage0n, stage0c, stage1a, stage1d, swap or smoke"; exit 1;; esac      # stage0d ADDED 2026-11-14
 MAN="simulation/manifests/sim_${SIM_STAGE}"
 for f in "${MAN}_worlds.csv" "${MAN}_units.csv" "${MAN}_engine.csv" simulation/run_worlds.R simulation/simulate_world.R birds/runMe_birds.R eve/eve_sim_task.sbatch eve/eve_env.sh; do
   [ -f "$f" ] || { echo "MISSING: $f  (the manifests are made by: Rscript simulation/run_worlds.R manifest ${SIM_STAGE}; commit and pull them)"; exit 1; }
@@ -35,7 +36,7 @@ NCOPY=$(awk -F, 'NR>1 && $9!="\"\"" && $9!="" {n++} END{print n+0}' "${MAN}_unit
 # ---- per-stage defaults (ESTIMATES): train slices per unit and time; memory per core
 case "${SIM_STAGE}" in
   stage0)  D_TSLICES=8;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;      # 3,180 models x ~14.5 s = 12.8 h per unit -> ~1.6 h per task
-  stage0d|stage0r|stage0n) D_TSLICES=10; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=80;;      # ADDED 2026-11-14: 3,180 models per unit as in stage 0, 10 slices (about 1.3 h per task), 8 h limit (stage 0: median 1.3 h, 2 of 80 tasks hit the 4 h limit)
+  stage0d|stage0r|stage0n|stage0c) D_TSLICES=10; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=80;;      # ADDED 2026-11-14: 3,180 models per unit as in stage 0, 10 slices (about 1.3 h per task), 8 h limit (stage 0: median 1.3 h, 2 of 80 tasks hit the 4 h limit)
   stage1a) D_TSLICES=4;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=80;;     # 1,590 models = 6.4 h per unit -> ~1.6 h per task
   stage1d) D_TSLICES=6;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;      # 2,520 models = 10.1 h per unit -> ~1.7 h per task
   swap)    D_TSLICES=4;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;
