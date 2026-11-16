@@ -7,6 +7,7 @@
 #   stage0r  (added 2026-11-14) fade rate of the route drift: worlds 1 and 2 at drift sd 0.4 with rho 0.5 (fast) and 0.95 (slow), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage0n  (added 2026-11-15) non-stationary route level + less count noise + persistent surveys (plan section 9g): worlds 1 and 2 (seeds 101, 102) with all three changes, plus two ablations of world 1 (walk only; less noise and persistent surveys without the walk), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage0c  (added 2026-11-16) route level partly explained by the covariates (plan sections 9i, 9j): worlds 1 and 2 (seeds 101, 102) with route field from covariates 0.5 + random-walk route level 0.23 + count noise 0.7 + etaSd 0.4, plus two ablations of world 1 (without the covariate part; without the walk), same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
+#   stage0s  (added 2026-11-16, night run step 1, plan section 9l) the stage-0c worlds plus persistent surveys (surveyRho 0.70): A seeds 101 and 102, B (covariate share 0.75) seed 101, same and new places, 4 regimes: 3 worlds, 6 units, 19,080 models.
 #   stage1a  F1 x F2 x F3: phi 0 / 0.85 / 1 x flip share 0.10 / 0.30 x ladder order natural / flippersFirst / flippersLast / random, 5 replicate worlds per (phi, share), same-places design, PreVal vs status quo.
 #   stage1d  (Tweety, added 2026-11-05) route-level drift: drift off / moderate (AR(1), sd 0.4, 1/e in 5 years) x phi 0 / 0.85 x flip share 0.30, 5 replicates, natural ladder, same places, PreVal vs status quo, horizons 1, 3, 5, 10.
 #   swap     (Tweety, added 2026-11-05) causal swap test: phi 0 / 0.85 / 1 at flip share 0.30, 5 replicates, ladders oracle and oracleSwap (flippers and stable covariates exchanged at the same ladder positions), same places.
@@ -48,9 +49,14 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
-  if (stage == "stage0c") {      # ADDED 2026-11-16 (ANALYSIS_PLAN_SIMULATION.md section 9j): route field from covariates (cross-validated share about 0.5 as in the real data), walk 0.23, noise scale 0.7, etaSd 0.4 (the marginals need it, see 9j); ablations: no covariate part, no walk
+  if (stage == "stage0s") {      # ADDED 2026-11-16 night, step 1 (ANALYSIS_PLAN_SIMULATION.md section 9l): the stage-0c worlds plus persistent surveys (surveyRho 0.70, real continuity 0.86); B also raises the covariate share of the route level to 0.75
+    W <- data.table(world = c("s0s_a_w1", "s0s_a_w2", "s0s_b_w1"), seed = c(101L, 102L, 101L), flipStrength = 0, flipShare = 0.3571,
+                    routeFromCov = c(0.5, 0.5, 0.75), routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.4, surveyRho = 0.70)
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
+    U <- makeUnits(W, "natural", c("same", "new"), REG4, REG4); E <- FULL_ENGINE
+  } else if (stage == "stage0c") {      # ADDED 2026-11-16 (ANALYSIS_PLAN_SIMULATION.md section 9j): route field from covariates (cross-validated share about 0.5 as in the real data), walk 0.23, noise scale 0.7, etaSd 0.4 (the marginals need it, see 9j); ablations: no covariate part, no walk
     W <- data.table(world = c("s0c_full_w1", "s0c_full_w2", "s0c_nocov_w1", "s0c_nowalk_w1"), seed = c(101L, 102L, 101L, 101L), flipStrength = 0, flipShare = 0.3571,
                     routeFromCov = c(0.5, 0.5, 0, 0.5), routeWalkSd = c(0.23, 0.23, 0.23, 0), noiseScale = 0.7, etaSd = 0.4)
     for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
