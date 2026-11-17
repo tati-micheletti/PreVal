@@ -1,0 +1,5 @@
+unit,world,ladder,design,arm,tag,ladderTag,rankPerWindow,rankFrom,routeHeldOut,planRegimes
+1,s0t_c_w1,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+2,s0t_c_w1,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+3,s0t_c_w2,natural,same,main,same,"",1,"",1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
+4,s0t_c_w2,natural,new,spatialTest,new,"",1,same,1,"FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"
