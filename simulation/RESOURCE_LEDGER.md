@@ -20,6 +20,29 @@ Refresh after every stage; add the new row to the table below by hand.
 - **RAM:** every step peaked around 1 GB or less. Requests were 10 / 3 / 3 / 3 GB. Proposed tighter requests for the next stages (not yet applied, apart from prep): prep 5 GB (done in `eve/submit_sim.sh`), rank 2 GB, rankcopy 2 GB, train 2 GB, analyze 4 GB until measured.
 - **Time limits proposed:** train 8 h (median 1.3 h, max so far above 4 h), rank 1 h is fine (max 11 min), prep 1 h is enough (max 23 min).
 
+## Simulation (Tweety), all stages 13-17 Nov 2026 (refreshed 2026-11-17 from a new `sacct` dump; per-task rows in `ledger/ledger_simulation_tasks.csv`)
+
+One row per stage; each stage is one submission of the chain prep, rank, rankcopy, train, analyze (`eve/submit_sim.sh`). Wall = first task start to last task end of the stage.
+
+| stage | what it was | tasks | not completed | CPU-hours | train wall per task (median / max min) | peak RAM GB (max) | wall, whole stage |
+|---|---|---|---|---|---|---|---|
+| 0 | first pass 13 Nov + resubmission of the 2 time-outs 14 Nov | 250 | 2 (time-out at 4 h) | 144.9 | 42 / 240 | 1.22 | 14.1 h (13 Nov 19:21 to 14 Nov 09:29) |
+| 0d | drift worlds | 120 | 0 | 117.5 | 78 / 183 | 1.16 | 3.7 h |
+| 0r | rho worlds | 120 | 0 | 125.8 | 86 / 183 | 1.11 | 3.6 h |
+| 0n | noise worlds | 120 | 0 | 127.7 | 77 / 231 | 1.16 | 4.8 h |
+| 0c | covariate-driven route level | 120 | 0 | 81.4 | 50 / 153 | 1.15 | 3.2 h |
+| 0s | 3 worlds, 20 km block size | 114 | 2 (prep out of memory, twice) | 102.3 | 74 / 133 | 12.00 (the failed prep at its 12 GB request) | 3.7 h |
+| 0t | 2 worlds | 100 | 0 | 62.7 | 37 / 148 | 1.23 | 3.2 h |
+| 0u | 4 worlds | 120 | 0 | 120.0 | 84 / 197 | 1.25 | 3.8 h |
+| 0v | 3 worlds, 5 horizons (1, 2, 4, 6, 9) | 126 | 0 | 205.1 | 146 / 264 | 1.36 | 5.1 h |
+
+- **Total simulation compute so far: 1,087 CPU-hours** (stages 0 to 0v). Stages with 2.5 horizons cost 60-145 CPU-hours; stage 0v with 5 horizons cost 205 (68 CPU-hours per world against 30 for stage 0u, i.e. 2.3 times, with twice the horizons).
+- **Wall time is about 3-4 h per stage whatever its size**, because the slowest training task (status quo regime, 2.5-4.4 h) sets the end. A 5-horizon stage takes 5 h. Plan overnight runs with this: about 5 stages per night in sequence is the limit, if each needs the previous result.
+- **RAM:** every step peaked at 1.4 GB or less, except one case. Prep of world `s0s_a_w1` ran out of memory at 5 GB and again at 12 GB: the block-size step (`blockCV::cv_spatial_autocor`, variogram fit) never ends on a spatially flat residual field and grows without limit. Not a size problem, so more RAM does not help; fixed by copying the block size from the sibling world (plan 9l). Current requests in `eve/submit_sim.sh`: prep 12 GB (kept because of this incident), rank 2, rankcopy 2, train 2, analyze 4 GB; measured peaks would allow prep 2 GB, analyze 2 GB.
+- **Time limits:** train 8 h (stage 0v maximum 4.4 h) is enough; rank 1 h (max 15 min); prep 1 h (max 37 min).
+- **Training speed per model** was not recomputed; stage 0 was 15.2 s per model. The stage 0v median task (146 min) is twice that of 0u because it trains models for 5 instead of 2.5 horizons per window.
+- **Whole project, all PreVal jobs since 1 Oct 2026: 4,296 CPU-hours** (sum of `ledger_by_job_day.csv`, including time-outs and cancelled tasks, now including the 14 Nov resubmission).
+
 ## Real-data campaigns (from the generated table; day groups, caribou jobs share the name preval-*)
 
 | day (campaign, as far as the notes say) | job | tasks | CPU-hours | median wall min | peak RAM GB (max) | requested GB | problems |
