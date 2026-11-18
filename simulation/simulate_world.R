@@ -43,7 +43,10 @@ defaultWorldParams <- function() list(
   routeWalkSd = 0, routeWalkPin = NA_integer_, noiseScale = 1, surveyRho = 0,
   # CHANGED 2026-11-16 (stage 0c, plan sections 9i and 9j): routeFromCov = g in [0, 1): the Gaussian route field (before the Beta rank transform) is sqrt(g) * (standardised linear combination of the STATIC route-level parts of the stable covariates,
   # coefficients of the stable family) + sqrt(1 - g) * the field of before. 0 = off (the world is unchanged). Reason: in the real data the covariates explain about half of the between-route variance out of sample, in the simulation 2-6 % (plan 9i).
-  routeFromCov = 0
+  routeFromCov = 0,
+  # CHANGED 2026-11-18 (plan section 9v): flipSd = sd (log scale, pooled over the data) of the FLIP contribution to eta, set directly instead of through its share of etaSd^2. NA = off (the world is unchanged). The other
+  # families keep their shares, so a world with flipSd differs from the same world without it ONLY in the size of the flip contribution (the stage-1v flip share 0.30 at etaSd 0.30 corresponds to flipSd 0.16, 0.60 to 0.23).
+  flipSd = NA_real_
 )
 
 # CHANGED 2026-11-05: the calibrated birds-type realism anchor (parameter set found in simulation/sim_calibrate_anchor.R, section 9 of the analysis plan); defaultWorldParams() stays the generic world of the unit tests.
@@ -115,7 +118,7 @@ simulateWorld <- function(params = list()) {
   for (k in seq_along(flipIx)) B[flipIx[k], ] <- coefs[flipIx[k]] * (sqrt(1 - phi^2) + phi * S[k, ])
   raw <- function(f) { ix <- which(fam == f); if (!length(ix)) return(rep(0, n)); rowSums(Z[, ix, drop = FALSE] * t(B[ix, yi, drop = FALSE])) }
   scaleTo <- function(v, target) { sdv <- stats::sd(v); if (target <= 0 || sdv == 0) list(v = rep(0, n), k = 0) else list(v = v * sqrt(target * V) / sdv, k = sqrt(target * V) / sdv) }
-  cs <- lapply(c("stable", "drift", "flip"), function(f) scaleTo(raw(f), sh[[f]])); names(cs) <- c("stable", "drift", "flip")
+  cs <- lapply(c("stable", "drift", "flip"), function(f) scaleTo(raw(f), if (f == "flip" && is.finite(P$flipSd)) P$flipSd^2 / V else sh[[f]])); names(cs) <- c("stable", "drift", "flip")      # CHANGED 2026-11-18: flipSd overrides the flip share (see defaultWorldParams)
   rr <- .seeded(sd0 + 4000L, .std(sqrt(P$routeSpatialShare) * .field(rt$x, rt$y, ell, sd0 + 4001L) + sqrt(1 - P$routeSpatialShare) * stats::rnorm(nrow(rt))))
   if (P$routeFromCov > 0) {      # CHANGED 2026-11-16: route field partly a function of the static parts of the stable covariates (see routeFromCov)
     Sc <- Reduce(`+`, lapply(which(fam == "stable"), function(j) coefs[j] * .std(statL[[j]]))); rr <- .std(sqrt(P$routeFromCov) * .std(Sc) + sqrt(1 - P$routeFromCov) * rr)
