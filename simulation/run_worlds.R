@@ -12,6 +12,7 @@
 #   stage0u  (added 2026-11-17, night run step 3, plan section 9p) lever probes: etaSd 0.30 (seeds 101, 102), covariate share 0.99 with etaSd 0.36, survey persistence 0.80, all at walk 0.23 and noise 0.7; same and new places, 4 regimes: 4 worlds, 8 units, 25,440 models.
 #   stage0v  (added 2026-11-17, night run step 4, plan section 9r) the real horizon bins: engine horizons 1,2,4,6,9; worlds eta30 (seeds 101, 102) and rho80 (seed 101); same and new places, 4 regimes: 3 worlds, 6 units, 5 horizons.
 #   stage1v  (added 2026-11-17, plan section 9t) FIRST FLIP STAGE on the anchor (s0v_eta30 settings): phi 0 / 0.85 / 1 x flip share 0.30 / 0.60 x seeds 101, 102, ladders natural and flippersFirst, same places, PreVal vs status quo, horizons 1,2,4,6,9: 12 worlds, 24 units.
+#   stage1w  (added 2026-11-23, plan section 9v) STRONG-FLIP STAGE: the stage-1v anchor with the flip contribution set directly (flipSd 0.35 / 0.50 on the log scale): phi 0 / 0.85 / 1 x flipSd x seeds 101, 102, ladders natural and flippersFirst, same places, PreVal vs status quo, horizons 1,2,4,6,9; 12 worlds, 24 units
 #   stage1a  F1 x F2 x F3: phi 0 / 0.85 / 1 x flip share 0.10 / 0.30 x ladder order natural / flippersFirst / flippersLast / random, 5 replicate worlds per (phi, share), same-places design, PreVal vs status quo.
 #   stage1d  (Tweety, added 2026-11-05) route-level drift: drift off / moderate (AR(1), sd 0.4, 1/e in 5 years) x phi 0 / 0.85 x flip share 0.30, 5 replicates, natural ladder, same places, PreVal vs status quo, horizons 1, 3, 5, 10.
 #   swap     (Tweety, added 2026-11-05) causal swap test: phi 0 / 0.85 / 1 at flip share 0.30, 5 replicates, ladders oracle and oracleSwap (flippers and stable covariates exchanged at the same ladder positions), same places.
@@ -53,12 +54,19 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1w", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
   if (stage == "stage1v") {      # ADDED 2026-11-17 (ANALYSIS_PLAN_SIMULATION.md section 9t): FIRST FLIP STAGE on the anchor (s0v_eta30 settings: covariate share 0.90, walk 0.23, noise 0.7, etaSd 0.30, surveyRho 0.70, no drift), horizons 1,2,4,6,9
     W <- CJ(phi = c(0, 0.85, 1), fs = c(0.30, 0.60), w = 1:2); W[, `:=`(world = sprintf("s1v_phi%.2f_fs%.2f_w%d", phi, fs, w), seed = 100L + w, flipStrength = phi, flipShare = fs)]; W[, c("phi", "fs", "w") := NULL]
     for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
     W[, `:=`(routeFromCov = 0.90, routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare"))
+    U <- makeUnits(W, c("natural", "flippersFirst"), "same", REG2, REG2); E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", "1,2,4,6,9")
+    return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
+  }
+  if (stage == "stage1w") {      # ADDED 2026-11-23 (ANALYSIS_PLAN_SIMULATION.md section 9v): STRONG-FLIP STAGE on the same anchor as stage 1v; only the size of the flip contribution changes (flipSd 0.35 / 0.50 on the log scale, set directly; stage 1v had 0.16 / 0.23)
+    W <- CJ(phi = c(0, 0.85, 1), fsd = c(0.35, 0.50), w = 1:2); W[, `:=`(world = sprintf("s1w_phi%.2f_sd%.2f_w%d", phi, fsd, w), seed = 100L + w, flipStrength = phi, flipShare = 0.30, flipSd = fsd)]; W[, c("phi", "fsd", "w") := NULL]
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
+    W[, `:=`(routeFromCov = 0.90, routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare", "flipSd"))
     U <- makeUnits(W, c("natural", "flippersFirst"), "same", REG2, REG2); E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", "1,2,4,6,9")
     return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
   }
@@ -137,7 +145,7 @@ outDir <- function(stage) { v <- Sys.getenv("PREVAL_OUT", ""); if (nzchar(v)) v 
 worldParams <- function(row) {
   p <- modifyList(anchorWorldParams(), list(seed = as.integer(row$seed), flipStrength = row$flipStrength, nRoutes = as.integer(row$nRoutes), nStable = as.integer(row$nStable), nDrift = as.integer(row$nDrift), nFlip = as.integer(row$nFlip), nNoise = as.integer(row$nNoise), routeDrift = if (!is.null(row$routeDrift)) row$routeDrift else 0))
   if (!is.null(row$routeDriftRho) && !is.na(row$routeDriftRho)) p$routeDriftRho <- row$routeDriftRho      # ADDED 2026-11-14: optional column of the worlds table (stage0r); without it the generator default exp(-1/5) is used, as before
-  for (n in c("routeWalkSd", "noiseScale", "surveyRho", "routeFromCov", "etaSd")) if (!is.null(row[[n]]) && !is.na(row[[n]])) p[[n]] <- row[[n]]      # ADDED 2026-11-15: optional columns of the worlds table (stage0n); without them the generator defaults (all off) are used, as before
+  for (n in c("routeWalkSd", "noiseScale", "surveyRho", "routeFromCov", "etaSd", "flipSd")) if (!is.null(row[[n]]) && !is.na(row[[n]])) p[[n]] <- row[[n]]      # ADDED 2026-11-15: optional columns of the worlds table (stage0n); without them the generator defaults (all off) are used, as before
   p$shares <- flipShares(row$flipShare); p
 }
 # SIMULATION-ONLY ladder files in the folder of the world (the engine reads featureTable_<ladder>.csv with PREVAL_LADDER=<ladder>); natural needs no file (per-window rankings)
