@@ -54,7 +54,7 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1w", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1w", "stage1x", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
   if (stage == "stage1v") {      # ADDED 2026-11-17 (ANALYSIS_PLAN_SIMULATION.md section 9t): FIRST FLIP STAGE on the anchor (s0v_eta30 settings: covariate share 0.90, walk 0.23, noise 0.7, etaSd 0.30, surveyRho 0.70, no drift), horizons 1,2,4,6,9
     W <- CJ(phi = c(0, 0.85, 1), fs = c(0.30, 0.60), w = 1:2); W[, `:=`(world = sprintf("s1v_phi%.2f_fs%.2f_w%d", phi, fs, w), seed = 100L + w, flipStrength = phi, flipShare = fs)]; W[, c("phi", "fs", "w") := NULL]
@@ -68,6 +68,13 @@ simStage <- function(stage) {
     for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
     W[, `:=`(routeFromCov = 0.90, routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare", "flipSd"))
     U <- makeUnits(W, c("natural", "flippersFirst"), "same", REG2, REG2); E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", "1,2,4,6,9")
+    return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
+  }
+  if (stage == "stage1x") {      # ADDED 2026-11-24 (ANALYSIS_PLAN_SIMULATION.md section 9x): SWAP TEST on the strong-flip anchor (flipSd 0.50): phi 0 / 1 x seeds 101-104; ladders oracle (covariates ordered by peak true effect) and oracleSwap (every flipper exchanged with the stable covariate of the same rank in its family, each in the other's ladder position)
+    W <- CJ(phi = c(0, 1), w = 1:4); W[, `:=`(world = sprintf("s1x_phi%.2f_sd0.50_w%d", phi, w), seed = 100L + w, flipStrength = phi, flipShare = 0.30, flipSd = 0.50)]; W[, c("phi", "w") := NULL]
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
+    W[, `:=`(routeFromCov = 0.90, routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare", "flipSd"))
+    U <- makeUnits(W, c("oracle", "oracleSwap"), "same", REG2, REG2); E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", "1,2,4,6,9")
     return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
   }
   if (stage == "stage0v") {      # ADDED 2026-11-17 night, step 4 (ANALYSIS_PLAN_SIMULATION.md section 9r): the real horizon bins (1, 2, 3-4, 5-9) via engine horizons 1,2,4,6,9; worlds eta30 (seeds 101, 102: covariate share 0.90, etaSd 0.30, surveys 0.70) and rho80 (stage-0u world, paired)
