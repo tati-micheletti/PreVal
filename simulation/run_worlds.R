@@ -13,6 +13,8 @@
 #   stage0v  (added 2026-11-17, night run step 4, plan section 9r) the real horizon bins: engine horizons 1,2,4,6,9; worlds eta30 (seeds 101, 102) and rho80 (seed 101); same and new places, 4 regimes: 3 worlds, 6 units, 5 horizons.
 #   stage1v  (added 2026-11-17, plan section 9t) FIRST FLIP STAGE on the anchor (s0v_eta30 settings): phi 0 / 0.85 / 1 x flip share 0.30 / 0.60 x seeds 101, 102, ladders natural and flippersFirst, same places, PreVal vs status quo, horizons 1,2,4,6,9: 12 worlds, 24 units.
 #   stage1w  (added 2026-11-23, plan section 9v) STRONG-FLIP STAGE: the stage-1v anchor with the flip contribution set directly (flipSd 0.35 / 0.50 on the log scale): phi 0 / 0.85 / 1 x flipSd x seeds 101, 102, ladders natural and flippersFirst, same places, PreVal vs status quo, horizons 1,2,4,6,9; 12 worlds, 24 units
+#   stage1y  (added 2026-11-27, plan section 9z) DRIFT-OFF / NEW PLACES WITH FLIPS / POOL REFIT: cells anchor (walk 0.23, phi 0), flip (walk 0.23, phi 1, flipSd 0.50) and nodrift (walk 0, phi 0) x seeds 101-105; natural ladder (same + new places, levels 2,10,Inf) and, in anchor and flip, the oracle ladder (same places, levels 2,5,10,20,Inf); horizons 1,2,4,9;
+#            base regimes PreVal (FutureUnseenGrouped) and status quo (phase 1), then refit regimes FutureUnseenGroupedPoolRefit and FutureTaintedRefit (phase 2, own runs that need the finished base models): 80 units.
 #   stage1a  F1 x F2 x F3: phi 0 / 0.85 / 1 x flip share 0.10 / 0.30 x ladder order natural / flippersFirst / flippersLast / random, 5 replicate worlds per (phi, share), same-places design, PreVal vs status quo.
 #   stage1d  (Tweety, added 2026-11-05) route-level drift: drift off / moderate (AR(1), sd 0.4, 1/e in 5 years) x phi 0 / 0.85 x flip share 0.30, 5 replicates, natural ladder, same places, PreVal vs status quo, horizons 1, 3, 5, 10.
 #   swap     (Tweety, added 2026-11-05) causal swap test: phi 0 / 0.85 / 1 at flip share 0.30, 5 replicates, ladders oracle and oracleSwap (flippers and stable covariates exchanged at the same ladder positions), same places.
@@ -27,6 +29,7 @@
 #                               rank      taskId = (unit, slice) over the units that rank their own covariates (natural ladder, same-places design); slice = share of the windows
 #                               rankcopy  taskId = unit over the units that reuse those rankings (natural ladder, new-places design: PREVAL_RANKFROM = same-places run)
 #                               train     taskId = (unit, slice) over all units; slice = round-robin share of the models, largest first (engine PREVAL_SLICE_ID / PREVAL_SLICE_COUNT)
+#                               trainrefit  (ADDED 2026-11-27, stage 1y) the same for the refit units (phase 2), which start only when every base model exists: they retrain the base models' stopping epochs (and, for the pool refit, on the status quo's pool)
 #                               analyze   taskId = unit
 # Environment variables already set (PREVAL_*, SIM_ROOT) win over the manifest's engine settings, so a test can shorten anything without editing a file.
 if (nzchar(Sys.getenv("LOCALAPPDATA"))) .libPaths(c(file.path(Sys.getenv("LOCALAPPDATA"), "R", "win-library", "4.6"), .libPaths()))
@@ -54,7 +57,7 @@ makeUnits <- function(worlds, ladders, designs, regimesSame, regimesNew) {
 REG4 <- "FutureUnseenGrouped,FutureTainted,FutureTaintedSpatial,FutureUnseenSpatial"       # PreVal (unseen routes), status quo, spatial CV, PreVal + spatial (amendment 35 of the birds plan: "PreVal" = FutureUnseenGrouped)
 REG2 <- "FutureUnseenGrouped,FutureTainted"                                                    # PreVal vs status quo (stage 1a)
 simStage <- function(stage) {
-  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1w", "stage1x", "stage1a", "stage1d", "swap"))
+  stopifnot(stage %in% c("smoke", "stage0", "stage0d", "stage0r", "stage0n", "stage0c", "stage0s", "stage0t", "stage0u", "stage0v", "stage1v", "stage1w", "stage1x", "stage1y", "smoke1y", "stage1a", "stage1d", "swap"))
   base <- list(nRoutes = 2139L, nStable = 12L, nDrift = 6L, nFlip = 12L, nNoise = 30L, routeDrift = 0)
   if (stage == "stage1v") {      # ADDED 2026-11-17 (ANALYSIS_PLAN_SIMULATION.md section 9t): FIRST FLIP STAGE on the anchor (s0v_eta30 settings: covariate share 0.90, walk 0.23, noise 0.7, etaSd 0.30, surveyRho 0.70, no drift), horizons 1,2,4,6,9
     W <- CJ(phi = c(0, 0.85, 1), fs = c(0.30, 0.60), w = 1:2); W[, `:=`(world = sprintf("s1v_phi%.2f_fs%.2f_w%d", phi, fs, w), seed = 100L + w, flipStrength = phi, flipShare = fs)]; W[, c("phi", "fs", "w") := NULL]
@@ -68,6 +71,29 @@ simStage <- function(stage) {
     for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
     W[, `:=`(routeFromCov = 0.90, routeWalkSd = 0.23, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare", "flipSd"))
     U <- makeUnits(W, c("natural", "flippersFirst"), "same", REG2, REG2); E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", "1,2,4,6,9")
+    return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
+  }
+  if (stage %in% c("stage1y", "smoke1y")) {      # ADDED 2026-11-27 (ANALYSIS_PLAN_SIMULATION.md section 9z): see the header. smoke1y = the same structure at toy size, to test the chain (not a result)
+    smoke <- stage == "smoke1y"
+    cells <- data.table(cell = c("anchor", "flip", "nodrift"), walk = c(0.23, 0.23, 0), phi = c(0, 1, 0), oracle = c(TRUE, TRUE, FALSE))
+    W <- CJ(cell = cells$cell, w = if (smoke) 1L else 1:5, sorted = FALSE); W <- merge(W, cells, by = "cell", sort = FALSE)
+    W[, `:=`(world = sprintf("s1y_%s_w%d", cell, w), seed = 100L + w, flipStrength = phi, flipShare = 0.30, flipSd = 0.50, routeWalkSd = walk)]
+    if (smoke) W <- W[cell == "flip"]
+    for (n in setdiff(names(base), "routeDrift")) W[[n]] <- base[[n]]; W[["routeDrift"]] <- 0
+    if (smoke) { W[, `:=`(nRoutes = 1200L, nStable = 3L, nDrift = 2L, nFlip = 3L, nNoise = 6L)] }
+    W[, `:=`(routeFromCov = 0.90, noiseScale = 0.7, etaSd = 0.30, surveyRho = 0.70)]
+    U <- rbindlist(lapply(seq_len(nrow(W)), function(i) {
+      u <- data.table(ladder = c("natural", "natural", if (W$oracle[i]) "oracle"), design = c("same", "new", if (W$oracle[i]) "same"))
+      u[, `:=`(world = W$world[i], complexity = ifelse(ladder == "natural", if (smoke) "2,5" else "2,10,Inf", if (smoke) "2,5" else "2,5,10,20,Inf"))]; u }))
+    U[, `:=`(arm = ifelse(design == "same", "main", "spatialTest"), tag = design, ladderTag = ifelse(ladder == "natural", "", ladder), rankPerWindow = as.integer(ladder == "natural"),
+             rankFrom = ifelse(ladder == "natural" & design == "new", "same", ""), routeHeldOut = 1L, planRegimes = REG2, phase = 1L, baseTag = "")]
+    R <- copy(U); R[, `:=`(tag = paste0(design, "_refit"), baseTag = ifelse(nzchar(ladderTag), paste0(ladderTag, "_", design), design), planRegimes = "FutureUnseenGroupedPoolRefit,FutureTaintedRefit", phase = 2L,
+                          rankFrom = ifelse(ladder == "natural", "same", ""))]      # refit units copy their rankings from the same-places base run of the same ladder (module change of 2026-11-27: an explicit rankingsFromTag wins for refit runs)
+    U <- rbindlist(list(U, R)); U[, world := factor(world, levels = W$world)]; U[, ord := match(design, c("same", "new"))]; setorder(U, world, phase, ladder, ord); U[, ord := NULL]      # the first unit of every world is its natural same-places BASE unit (it runs the engine's prep step)
+    U[, world := as.character(world)]; U[, unit := seq_len(.N)]; setcolorder(U, c("unit", "world", "ladder", "design", "arm", "tag", "ladderTag", "rankPerWindow", "rankFrom", "phase", "routeHeldOut", "planRegimes", "complexity", "baseTag"))      # phase stands before the first quoted field so that eve/submit_sim.sh can read it with awk -F,
+    W[, c("cell", "w", "walk", "phi", "oracle") := NULL]; setcolorder(W, c("world", "seed", "flipStrength", "flipShare", "flipSd"))
+    E <- replace(FULL_ENGINE, "PREVAL_HORIZONS", if (smoke) "1" else "1,2,4,9")
+    if (smoke) E <- replace(E, c("PREVAL_START", "PREVAL_MINTRAIN", "PREVAL_LASTPILOT", "PREVAL_EPOCHS", "PREVAL_PILOT_EPOCHS", "PREVAL_PATIENCE"), c("2017", "2", "2019", "3", "3", "3"))
     return(list(worlds = W[], units = U[], engine = data.table(name = names(E), value = as.character(E))))
   }
   if (stage == "stage1x") {      # ADDED 2026-11-24 (ANALYSIS_PLAN_SIMULATION.md section 9x): SWAP TEST on the strong-flip anchor (flipSd 0.50): phi 0 / 1 x seeds 101-104; ladders oracle (covariates ordered by peak true effect) and oracleSwap (every flipper exchanged with the stable covariate of the same rank in its family, each in the other's ladder position)
@@ -143,7 +169,8 @@ writeManifest <- function(stage) {
   cat(sprintf("%s: %d worlds, %d units (engine runs) written to %s\n", stage, nrow(d$worlds), nrow(d$units), manifestDir)); invisible(d)
 }
 readManifest <- function(stage) { f <- function(n) file.path(manifestDir, sprintf("sim_%s_%s.csv", stage, n)); stopifnot(file.exists(f("worlds")), file.exists(f("units")), file.exists(f("engine")))
-  list(worlds = fread(f("worlds")), units = fread(f("units"), colClasses = list(character = c("ladderTag", "rankFrom"))), engine = fread(f("engine"), colClasses = "character")) }
+  uh <- names(fread(f("units"), nrows = 0L))      # CHANGED 2026-11-27: the character columns that exist (stage 1y adds complexity, baseTag, phase; older manifests do not have them)
+  list(worlds = fread(f("worlds")), units = fread(f("units"), colClasses = list(character = intersect(c("ladderTag", "rankFrom", "baseTag", "complexity", "tag"), uh))), engine = fread(f("engine"), colClasses = "character")) }
 
 # ---------------------------------------------------------------------------------------------------------------------------------- paths and the engine call
 simRoot <- function(stage) { r <- Sys.getenv("SIM_ROOT", ""); if (nzchar(r)) r else if (dir.exists("/data/birds")) file.path("/data/birds/PreVal/simulation", stage) else file.path(.repo, "outputs", "simulation", stage) }
@@ -167,6 +194,8 @@ runEngine <- function(stage, engineStage, u, eng, slice = NULL, nSlices = NULL) 
   ev <- setNames(eng$value, eng$name); ev <- ev[!nzchar(Sys.getenv(names(ev), ""))]            # an engine setting already in the environment wins over the manifest
   uv <- c(PREVAL_STAGE = engineStage, PREVAL_SPECIES = u$world, PREVAL_FINAL = dataDir(stage), PREVAL_OUT = outDir(stage), PREVAL_LADDER = u$ladderTag, PREVAL_RANKPERWINDOW = as.character(u$rankPerWindow), PREVAL_TAG = u$tag,
           PREVAL_ARM = u$arm, PREVAL_ROUTEHELDOUT = as.character(u$routeHeldOut), PREVAL_PLANREGIMES = u$planRegimes, PREVAL_RANKFROM = u$rankFrom)      # unit-specific variables are always set here
+  if (!is.null(u$complexity) && !is.na(u$complexity) && nzchar(u$complexity)) uv <- c(uv, PREVAL_COMPLEXITY = u$complexity)      # ADDED 2026-11-27: levels per unit (stage 1y: natural ladder 2,10,Inf; oracle ladder 2,5,10,20,Inf)
+  if (!is.null(u$baseTag) && !is.na(u$baseTag) && nzchar(u$baseTag)) uv <- c(uv, PREVAL_BASETAG = u$baseTag)      # ADDED 2026-11-27: refit units read the finished base models of this run folder (e.g. "same" or "oracle_same")
   if (!is.null(slice)) uv <- c(uv, PREVAL_SLICE_ID = as.character(slice), PREVAL_SLICE_COUNT = as.character(nSlices))
   v <- c(ev, uv); v[is.na(v)] <- ""
   old <- Sys.getenv(names(v), unset = NA); on.exit({ for (k in names(old)) if (is.na(old[[k]])) Sys.unsetenv(k) else do.call(Sys.setenv, setNames(list(old[[k]]), k)) }, add = TRUE)
@@ -177,8 +206,9 @@ runEngine <- function(stage, engineStage, u, eng, slice = NULL, nSlices = NULL) 
 }
 
 # ---------------------------------------------------------------------------------------------------------------------------------- steps
-stepUnits <- function(M, step) switch(step, prep = M$worlds, rank = M$units[rankPerWindow == 1L & !nzchar(rankFrom)], rankcopy = M$units[nzchar(rankFrom)], train = M$units, analyze = M$units, stop("unknown step ", step))
-stepSlices <- function(step, nSlices) if (step %in% c("rank", "train")) as.integer(nSlices) else 1L
+ph <- function(M) if ("phase" %in% names(M$units)) M$units$phase else rep(1L, nrow(M$units))      # ADDED 2026-11-27: phase 1 = base units, phase 2 = refit units (stage 1y); older stages have no phase column = all phase 1
+stepUnits <- function(M, step) switch(step, prep = M$worlds, rank = M$units[rankPerWindow == 1L & !nzchar(rankFrom)], rankcopy = M$units[nzchar(rankFrom)], train = M$units[ph(M) == 1L], trainrefit = M$units[ph(M) == 2L], analyze = M$units, stop("unknown step ", step))
+stepSlices <- function(step, nSlices) if (step %in% c("rank", "train", "trainrefit")) as.integer(nSlices) else 1L
 runStep <- function(stage, M, step, taskId, nSlices = 1L) {
   S <- stepSlices(step, nSlices); items <- stepUnits(M, step); k <- (as.integer(taskId) - 1L) %/% S + 1L; sl <- (as.integer(taskId) - 1L) %% S + 1L
   if (k > nrow(items)) { cat(sprintf("task %s is beyond the %d work items of step %s (%d x %d slices); nothing to do\n", taskId, nrow(items), step, nrow(items), S)); return(invisible()) }
@@ -187,7 +217,7 @@ runStep <- function(stage, M, step, taskId, nSlices = 1L) {
     generateWorld(stage, it); us <- M$units[world == it$world]; first <- us[1]
     runEngine(stage, "prep", first, M$engine)
     for (i in seq_len(nrow(us))[-1]) runEngine(stage, "design", us[i], M$engine)
-  } else if (step %in% c("rank", "train")) runEngine(stage, step, it, M$engine, sl, S)
+  } else if (step %in% c("rank", "train", "trainrefit")) runEngine(stage, if (step == "trainrefit") "train" else step, it, M$engine, sl, S)
   else if (step == "rankcopy") runEngine(stage, "rank", it, M$engine, 1L, 1L)
   else runEngine(stage, "analyze", it, M$engine)
   invisible()
@@ -197,7 +227,8 @@ runLocal <- function(stage, nSlices = 1L) {
   for (k in seq_len(nrow(M$worlds))) tick(sprintf("prep_%d", k), runStep(stage, M, "prep", k))
   nr <- nrow(stepUnits(M, "rank")); for (k in seq_len(nr * stepSlices("rank", nSlices))) tick(sprintf("rank_%d", k), runStep(stage, M, "rank", k, nSlices))
   for (k in seq_len(nrow(stepUnits(M, "rankcopy")))) tick(sprintf("rankcopy_%d", k), runStep(stage, M, "rankcopy", k))
-  for (k in seq_len(nrow(M$units) * stepSlices("train", nSlices))) tick(sprintf("train_%d", k), runStep(stage, M, "train", k, nSlices))
+  for (k in seq_len(nrow(stepUnits(M, "train")) * stepSlices("train", nSlices))) tick(sprintf("train_%d", k), runStep(stage, M, "train", k, nSlices))
+  for (k in seq_len(nrow(stepUnits(M, "trainrefit")) * stepSlices("trainrefit", nSlices))) tick(sprintf("trainrefit_%d", k), runStep(stage, M, "trainrefit", k, nSlices))      # ADDED 2026-11-27: refit units start after all base models exist
   for (k in seq_len(nrow(M$units))) tick(sprintf("analyze_%d", k), runStep(stage, M, "analyze", k))
   tt <- data.table(step = names(tm), seconds = round(unlist(tm), 1)); print(tt, row.names = FALSE)
   cat(sprintf("local run of stage %s finished in %.1f minutes\n", stage, as.numeric(difftime(Sys.time(), t0, units = "mins")))); invisible(tt)

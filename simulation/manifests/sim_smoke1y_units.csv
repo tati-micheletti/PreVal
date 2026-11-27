@@ -1,0 +1,7 @@
+unit,world,ladder,design,arm,tag,ladderTag,rankPerWindow,rankFrom,phase,routeHeldOut,planRegimes,complexity,baseTag
+1,s1y_flip_w1,natural,same,main,same,"",1,"",1,1,"FutureUnseenGrouped,FutureTainted","2,5",""
+2,s1y_flip_w1,natural,new,spatialTest,new,"",1,same,1,1,"FutureUnseenGrouped,FutureTainted","2,5",""
+3,s1y_flip_w1,oracle,same,main,same,oracle,0,"",1,1,"FutureUnseenGrouped,FutureTainted","2,5",""
+4,s1y_flip_w1,natural,same,main,same_refit,"",1,same,2,1,"FutureUnseenGroupedPoolRefit,FutureTaintedRefit","2,5",same
+5,s1y_flip_w1,natural,new,spatialTest,new_refit,"",1,same,2,1,"FutureUnseenGroupedPoolRefit,FutureTaintedRefit","2,5",new
+6,s1y_flip_w1,oracle,same,main,same_refit,oracle,0,"",2,1,"FutureUnseenGroupedPoolRefit,FutureTaintedRefit","2,5",oracle_same

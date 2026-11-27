@@ -10,10 +10,10 @@
 #' @param adapter getAdapter(...)
 #' @param hyper list(hidden, embDim, dropout, lr, batchSize, epochs, weightDecay), fixed per species
 runModel <- function(store, manifest, planRow, features, adapter, hyper, outputDir, reRun = FALSE, device = "cpu", zClip = 10,
-                     earlyStopPatience = 15L, verbose = FALSE, mainModelDir = NULL) {
+                     earlyStopPatience = 15L, verbose = FALSE, mainModelDir = NULL, poolManifest = NULL) {      # poolManifest ADDED 2026-11-27 (pool refit, runRefit.R)
   if (grepl("Refit$", planRow$typeValidation)) {      # refit regimes: see runRefit.R
     if (is.null(mainModelDir)) stop("refit regimes need mainModelDir (the folder with the base models)")
-    return(runModelRefit(store, manifest, planRow, features, adapter, hyper, outputDir, mainModelDir, reRun = reRun, device = device, zClip = zClip))
+    return(runModelRefit(store, manifest, planRow, features, adapter, hyper, outputDir, mainModelDir, reRun = reRun, device = device, zClip = zClip, poolManifest = poolManifest))
   }
   modelName <- planRow$modelName
   finalPath <- file.path(outputDir, paste0(modelName, "_finalDT.csv"))

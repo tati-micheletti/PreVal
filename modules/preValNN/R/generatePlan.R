@@ -9,7 +9,7 @@
 #' @param valYears number of validation years of PreVal (default 1; 2 = the two-year-validation variant)
 #' @param horizons forecast distances T - e to build (e.g. 1:3)
 #' @param covariateLevels complexity ladder (Inf = all)
-#' @param planRegimes regimes that get models in the plan (default: all built ones). Names ending in "Refit" use the base regime's split and need all
+#' @param planRegimes regimes that get models in the plan (default: all built ones). Names ending in "Refit" (also "PoolRefit", 2026-11-27: see runRefit.R) use the base regime's split and need all
 #'   base regimes to be BUILT (equal training size depends on all of them), so `regimes` stays the full set
 #' @param nReplicates independent network initialisations per cell (same splits)
 #' @param firstForecastYear no split forecasts an earlier year (the years before it form the pre-test history used by the network pilot)
@@ -58,11 +58,11 @@ generatePlan <- function(idx, startYear, endYear, minTrainYears = 2L, valYears =
   rows <- data.table::rbindlist(lapply(seq_len(nrow(keep)), function(i) {
     g <- keep[i]; b <- bundles[[g$splitId]]
     planRg <- if (is.null(planRegimes)) names(b$splits) else planRegimes
-    planRg <- planRg[sub("Refit$", "", planRg) %in% names(b$splits)]
+    planRg <- planRg[refitBase(planRg) %in% names(b$splits)]
     data.table::rbindlist(lapply(planRg, function(rg) data.table::data.table(
       splitId = g$splitId, typeValidation = rg, windowStart = g$s, historyEnd = g$e, testYear = g$testYear, horizon = g$testYear - g$e,
-      valYears = valYears, trainStartYear = g$s, trainEndYear = switch(sub("Refit$", "", rg), FutureUnseen = , FutureUnseenSpatial = , FutureUnseenGrouped = g$e - valYears, Internal = g$testYear, g$e),
-      nTrainS = b$sizes[["nTrain"]], nValS = if (!is.null(b$valSizes) && sub("Refit$", "", rg) %in% names(b$valSizes)) b$valSizes[[sub("Refit$", "", rg)]] else b$sizes[["nVal"]],   # PreVal + spatial has its own, smaller validation size
+      valYears = valYears, trainStartYear = g$s, trainEndYear = switch(refitBase(rg), FutureUnseen = , FutureUnseenSpatial = , FutureUnseenGrouped = g$e - valYears, Internal = g$testYear, g$e),
+      nTrainS = b$sizes[["nTrain"]], nValS = if (!is.null(b$valSizes) && refitBase(rg) %in% names(b$valSizes)) b$valSizes[[refitBase(rg)]] else b$sizes[["nVal"]],   # PreVal + spatial has its own, smaller validation size
       nTestS = b$sizes[["nTest"]], trainShare = b$trainShare, splitSeed = g$splitSeed, arm = arm)))
   }))
   plan <- data.table::rbindlist(lapply(covariateLevels, function(k) data.table::rbindlist(lapply(seq_len(nReplicates), function(r) {

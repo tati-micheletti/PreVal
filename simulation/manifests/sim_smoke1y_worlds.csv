@@ -1,0 +1,2 @@
+world,seed,flipStrength,flipShare,flipSd,routeWalkSd,nRoutes,nStable,nDrift,nFlip,nNoise,routeDrift,routeFromCov,noiseScale,etaSd,surveyRho
+s1y_flip_w1,101,1,0.3,0.5,0.23,1200,3,2,3,6,0,0.9,0.7,0.3,0.7

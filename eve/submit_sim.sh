@@ -12,6 +12,7 @@
 #   Stage 0t (night run step 2, added 2026-11-17): stage-0s settings with covariate share 0.90, 2 worlds x 2 designs x 4 regimes. 4 units x 3,180 models = 12,720 models; use TRAIN_SLICES=20 (80 tasks, one wave) and MEM_PREP=12G.
 #   Stage 0u (night run step 3, added 2026-11-17): lever probes (etaSd 0.30 x2 seeds, covariate share 0.99, survey persistence 0.80), 4 worlds x 2 designs x 4 regimes. 8 units x 3,180 models = 25,440 models; defaults (10 slices, 80 tasks), MEM_PREP=12G.
 #   Stage 0v (night run step 4, added 2026-11-17): the real horizon bins, engine horizons 1,2,4,6,9 (5 instead of 2: about 2.5 times the models per unit), 3 worlds x 2 designs x 4 regimes = 6 units; use PREVAL_HORIZONS=1,2,4,6,9 (the manifest also holds it), TRAIN_SLICES=13, RANK_SLICES=12, RANK_TIME=02:00:00, MEM_PREP=12G.
+#   Stage 1y (added 2026-11-27, plan section 9z): drift off / new places with flips / pool refit; 15 worlds, 80 units = 40 BASE units (phase 1) + 40 REFIT units (phase 2, submitted as a second train array that starts after every base model exists), about 1,000 CPU-hours (estimate); defaults 10 slices per unit.
 #   Stage 1a:                 30 worlds (phi 0/0.85/1 x flip share 0.10/0.30 x 5 replicates) x 4 ladder orders, same places, 2 regimes. 120 units x 1,590 models = 190,800 models.
 #   Stage 1d (route drift):   20 worlds (drift off/moderate x phi 0/0.85 x 5 replicates) x natural ladder, horizons 1,3,5,10, 2 regimes. 20 units x 2,520 models = 50,400 models.
 #   Swap (causal swap test):  15 worlds (phi 0/0.85/1 x 5 replicates) x ladders oracle and oracleSwap, 2 regimes. 30 units x 1,590 models = 47,700 models.
@@ -27,7 +28,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 USER="${USER:-${USERNAME:-user}}"      # only needed for the local dry run (Git Bash has no USER)
 : "${SIM_STAGE:?set SIM_STAGE to stage0, stage1a or smoke}"
-case "${SIM_STAGE}" in stage0|stage0d|stage0r|stage0n|stage0c|stage0s|stage0t|stage0u|stage0v|stage1v|stage1w|stage1x|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage0d, stage0r, stage0n, stage0c, stage0s, stage0t, stage0u, stage0v, stage1v, stage1w, stage1x, stage1a, stage1d, swap or smoke"; exit 1;; esac      # stage0d ADDED 2026-11-14
+case "${SIM_STAGE}" in stage0|stage0d|stage0r|stage0n|stage0c|stage0s|stage0t|stage0u|stage0v|stage1v|stage1w|stage1x|stage1y|smoke1y|stage1a|stage1d|swap|smoke) ;; *) echo "SIM_STAGE must be stage0, stage0d, stage0r, stage0n, stage0c, stage0s, stage0t, stage0u, stage0v, stage1v, stage1w, stage1x, stage1y, smoke1y, stage1a, stage1d, swap or smoke"; exit 1;; esac      # stage0d ADDED 2026-11-14
 MAN="simulation/manifests/sim_${SIM_STAGE}"
 for f in "${MAN}_worlds.csv" "${MAN}_units.csv" "${MAN}_engine.csv" simulation/run_worlds.R simulation/simulate_world.R birds/runMe_birds.R eve/eve_sim_task.sbatch eve/eve_env.sh; do
   [ -f "$f" ] || { echo "MISSING: $f  (the manifests are made by: Rscript simulation/run_worlds.R manifest ${SIM_STAGE}; commit and pull them)"; exit 1; }
@@ -36,11 +37,17 @@ NW=$(( $(wc -l < "${MAN}_worlds.csv") - 1 )); NU=$(( $(wc -l < "${MAN}_units.csv
 # units that rank their own covariates (natural ladder, rankPerWindow=1, no rankFrom) and units that copy a ranking (rankFrom set); columns of the units file: unit,world,ladder,design,arm,tag,ladderTag,rankPerWindow,rankFrom,...
 NRANKU=$(awk -F, 'NR>1 && $8=="1" && $9=="\"\"" {n++} END{print n+0}' "${MAN}_units.csv")
 NCOPY=$(awk -F, 'NR>1 && $9!="\"\"" && $9!="" {n++} END{print n+0}' "${MAN}_units.csv")
+# ADDED 2026-11-27: phase column (1 = base units, 2 = refit units that need the finished base models); manifests without it have only phase 1. The column stands before the first quoted field, so awk -F, can read it.
+PHCOL=$(head -1 "${MAN}_units.csv" | awk -F, '{for (i=1;i<=NF;i++) if ($i=="phase") print i}')
+if [ -n "${PHCOL}" ]; then NU1=$(awk -F, -v c="${PHCOL}" 'NR>1 && $c=="1" {n++} END{print n+0}' "${MAN}_units.csv"); NU2=$(awk -F, -v c="${PHCOL}" 'NR>1 && $c=="2" {n++} END{print n+0}' "${MAN}_units.csv"); else NU1=${NU}; NU2=0; fi
+[ $(( NU1 + NU2 )) -eq "${NU}" ] || { echo "phase column does not add up (${NU1} + ${NU2} != ${NU})"; exit 1; }
 [ "${NW}" -ge 1 ] && [ "${NU}" -ge 1 ] || { echo "empty manifest"; exit 1; }
 # ---- per-stage defaults (ESTIMATES): train slices per unit and time; memory per core
 case "${SIM_STAGE}" in
   stage0)  D_TSLICES=8;  D_TTIME=04:00:00; D_RSLICES=6; D_MAXPAR=60;;      # 3,180 models x ~14.5 s = 12.8 h per unit -> ~1.6 h per task
   stage0d|stage0r|stage0n|stage0c|stage0s|stage0t|stage0u|stage0v) D_TSLICES=10; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=80;;      # ADDED 2026-11-14: 3,180 models per unit as in stage 0, 10 slices (about 1.3 h per task), 8 h limit (stage 0: median 1.3 h, 2 of 80 tasks hit the 4 h limit)
+  stage1y) D_TSLICES=10; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=100;;      # ADDED 2026-11-27: 40 base units (about 1,900 models natural, 3,200 oracle) + 40 refit units; 10 slices per unit = 400 + 400 tasks of about 1-2 h
+  smoke1y) D_TSLICES=2;  D_TTIME=00:30:00; D_RSLICES=2; D_MAXPAR=4;;
   stage1x) D_TSLICES=18; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=100;;      # ADDED 2026-11-24: swap test, 8 worlds x 2 ladders = 16 units (about 3,975 models each), 18 slices = 288 tasks of about 1.3 h
   stage1w) D_TSLICES=12; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=100;;      # ADDED 2026-11-23: same size as stage 1v (12 worlds, 24 units, 5 horizons); stage 1v measured 593 CPU-h, wall about 8 h
   stage1v) D_TSLICES=12; D_TTIME=08:00:00; D_RSLICES=6; D_MAXPAR=100;;      # ADDED 2026-11-17: 2 regimes x 5 horizons = about 3,975 models per unit, 24 units, 12 slices (about 1.3 h per task; stage 0v median 2.4 h at 7,950 models per unit in 13 slices)
@@ -75,7 +82,7 @@ one() {
   local step="$1" size="$2" time="$3" par="$4" dep="$5" slices="${6:-1}" mem="${7:-3G}" depopt=() id
   if [ -n "${dep}" ]; then depopt=(--dependency=afterok:"${dep%%_*}" --kill-on-invalid-dep=yes); fi
   id=$(sbatch --parsable "${EXPORT},SIM_STEP=${step},SIM_NSLICES=${slices}" "${PART[@]+"${PART[@]}"}" "${depopt[@]+"${depopt[@]}"}" --job-name="sim-${SIM_STAGE}-${step}" --mem-per-cpu="${mem}" --time="${time}" --array=1-"${size}"%"${par}" eve/eve_sim_task.sbatch)
-  local sl=""; case "${step}" in rank|train) sl=", ${slices} slice(s) per unit";; esac
+  local sl=""; case "${step}" in rank|train|trainrefit) sl=", ${slices} slice(s) per unit";; esac
   printf '%-9s %s  (%d tasks, at most %d at once, %s each%s%s)\n' "${step}:" "${id}" "${size}" "${par}" "${time}" "${sl}" "${dep:+, after ${dep%%_*}}" >&2
   echo "${id}"
 }
@@ -83,7 +90,9 @@ prep=$(one prep "${NW}" "${PREP_TIME:-03:00:00}" "${MAXPAR_PREP:-40}" "" 1 "${ME
 last="${prep}"
 if [ "${NRANKU}" -gt 0 ]; then rank=$(one rank $(( NRANKU * RSLICES )) "${RANK_TIME:-01:00:00}" "${MAXPAR_RANK:-60}" "${last}" "${RSLICES}" "${MEM_RANK}"); last="${rank}"; fi
 if [ "${NCOPY}" -gt 0 ]; then rcopy=$(one rankcopy "${NCOPY}" 00:30:00 "${NCOPY}" "${last}" 1 "${MEM_RANK}"); last="${rcopy}"; fi
-train=$(one train $(( NU * TSLICES )) "${TRAIN_TIME:-${D_TTIME}}" "${MAXPAR}" "${last}" "${TSLICES}" "${MEM_TRAIN}")
-ana=$(one analyze "${NU}" "${ANALYZE_TIME:-01:00:00}" "${MAXPAR_ANALYZE:-20}" "${train}" 1 "${MEM_ANALYZE}")
-echo "Chain: prep ${prep%%_*} -> ${rank:+rank ${rank%%_*} -> }${rcopy:+rankcopy ${rcopy%%_*} -> }train ${train%%_*} -> analyze ${ana%%_*}"
+train=$(one train $(( NU1 * TSLICES )) "${TRAIN_TIME:-${D_TTIME}}" "${MAXPAR}" "${last}" "${TSLICES}" "${MEM_TRAIN}")
+last="${train}"
+if [ "${NU2}" -gt 0 ]; then trefit=$(one trainrefit $(( NU2 * TSLICES )) "${TRAIN_TIME:-${D_TTIME}}" "${MAXPAR}" "${last}" "${TSLICES}" "${MEM_TRAIN}"); last="${trefit}"; fi      # ADDED 2026-11-27: the refit units start only when ALL base models have finished OK
+ana=$(one analyze "${NU}" "${ANALYZE_TIME:-01:00:00}" "${MAXPAR_ANALYZE:-20}" "${last}" 1 "${MEM_ANALYZE}")
+echo "Chain: prep ${prep%%_*} -> ${rank:+rank ${rank%%_*} -> }${rcopy:+rankcopy ${rcopy%%_*} -> }train ${train%%_*} -> ${trefit:+trainrefit ${trefit%%_*} -> }analyze ${ana%%_*}"
 echo "Monitor: squeue -u \$USER   |   logs in ${WORKDIR}/logs/ (sim_<step>_<jobid>_<task>.out)   |   results: ${SIM_ROOT}/outputs/<world>/run*/analysis/"

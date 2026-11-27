@@ -31,8 +31,14 @@ fitFixedEpochs <- function(adapter, hyper, tr, nUnits, seed, lrSchedule, device 
   list(net = net, trainUnitsSeen = sort(unique(as.integer(as.array(tr$id$cpu())))))
 }
 
-runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, outputDir, mainModelDir, reRun = FALSE, device = "cpu", zClip = 10) {
-  modelName <- planRow$modelName; regime <- planRow$typeValidation; base <- sub("Refit$", "", regime)
+# ADDED 2026-11-27 (simulation stage 1y, ANALYSIS_PLAN_SIMULATION.md section 9z): the base regime of a refit regime. "FutureTaintedRefit" -> "FutureTainted" (as before); the new
+# "FutureUnseenGroupedPoolRefit" -> "FutureUnseenGrouped". A POOL refit takes the stopping epoch and learning-rate trajectory of the base model (PreVal's own validation chose them) but trains them
+# on the STATUS QUO's training pool of the same split (its training + validation cases = every case of the years s..e that the status quo had, the newest year included), i.e. on exactly the rows the
+# status quo's own refit uses. It separates "how long to train" (what the validation design chose) from "which data" (PreVal never trains on the newest year or on its held-out routes).
+refitBase <- function(rg) sub("(Pool)?Refit$", "", rg)
+
+runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, outputDir, mainModelDir, reRun = FALSE, device = "cpu", zClip = 10, poolManifest = NULL) {
+  modelName <- planRow$modelName; regime <- planRow$typeValidation; base <- refitBase(regime); isPool <- grepl("PoolRefit$", regime)
   finalPath <- file.path(outputDir, paste0(modelName, "_finalDT.csv"))
   if (!reRun && file.exists(finalPath)) { message(modelName, ": results exist and reRun = FALSE; loading."); return(data.table::fread(finalPath)) }
   t0 <- Sys.time(); idx <- store$index
@@ -47,7 +53,13 @@ runModelRefit <- function(store, manifest, planRow, features, adapter, hyper, ou
   bestEpoch <- as.integer(b$bestEpoch[1]); lrSched <- c(hyper$lr %||% 1e-3, h$lr)[seq_len(bestEpoch)]
   if (length(lrSched) != bestEpoch || anyNA(lrSched) || nrow(h) < bestEpoch) stop("Base model history does not cover its best epoch: ", baseName)
   if (!"dispCal" %in% names(b) || !is.finite(b$dispCal[1])) stop("The base model has no calibrated dispersion (dispCal); re-run the base models with the current code: ", baseName)
-  trRows <- c(manifest$row[manifest$set == "train"], manifest$row[manifest$set == "val"]); teRows <- manifest$row[manifest$set == "test"]
+  teRows <- manifest$row[manifest$set == "test"]
+  if (isPool) {      # ADDED 2026-11-27: train on the status quo's pool of this split (its training + validation cases), tested on the same test cases
+    if (is.null(poolManifest)) stop("A pool refit needs the status quo's manifest of the same split (poolManifest)")
+    trRows <- poolManifest$row[poolManifest$set %in% c("train", "val")]
+    if (!setequal(poolManifest$row[poolManifest$set == "test"], teRows)) stop("Pool refit: the status quo's test cases differ from the base regime's test cases (", modelName, ")")
+    if (any(idx$year[trRows] < planRow$windowStart | idx$year[trRows] > planRow$historyEnd)) stop("Pool refit: a pool case lies outside the years of the window (", modelName, ")")
+  } else trRows <- c(manifest$row[manifest$set == "train"], manifest$row[manifest$set == "val"])
   stopifnot(!anyDuplicated(trRows), !any(trRows %in% teRows))
   tr <- storeSlice(store, trRows, features, device); te <- storeSlice(store, teRows, features, device)
   st <- scaleStats(tr$x, features); tr$x <- applyScale(tr$x, st, zClip); te$x <- applyScale(te$x, st, zClip)

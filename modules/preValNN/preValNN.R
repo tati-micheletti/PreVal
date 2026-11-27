@@ -138,7 +138,7 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       win <- unique(plan[, .(windowStart, historyEnd, valYears)]); data.table::setorder(win, windowStart, historyEnd)
       if (!is.null(slice)) win <- win[(seq_len(.N) - 1L) %% slice[2] == (slice[1] - 1L)]
       isRefit <- nzchar(P(sim)$planRegimes) && all(grepl("Refit$", trimws(strsplit(P(sim)$planRegimes, ",")[[1]])))
-      fromTag <- if (isRefit) P(sim)$baseRunTag else P(sim)$rankingsFromTag
+      fromTag <- if (isRefit && !nzchar(P(sim)$rankingsFromTag)) P(sim)$baseRunTag else P(sim)$rankingsFromTag      # CHANGED 2026-11-27: an explicit rankingsFromTag also wins for refit runs (the simulation copies the new-places refit rankings from the same-places run); empty = as before
       fromDir <- if (isRefit || nzchar(fromTag)) resolveLadderDir(root, fromTag) else NA_character_   # 2026-11-04: "main" = run_main (caribou) or run (birds), see resolveLadderDir()
       tab <- data.table::as.data.table(sim$finalTable); idx <- readRDS(file.path(outDir, "caseIndex.rds"))
       rk0 <- data.table::fread(file.path(root, P(sim)$rankingFile)); feats <- rk0$Feature
@@ -190,8 +190,9 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
       message(sprintf("This process runs %d of %d models (device %s).", nrow(work), nrow(sim$experimentPlan), device))
       manifests <- new.env(); errs <- list(); rkWin <- new.env()
       for (i in seq_len(nrow(work))) {
-        pr <- work[i]; baseRg <- sub("Refit$", "", pr$typeValidation); key <- paste(pr$splitId, baseRg)
+        pr <- work[i]; baseRg <- refitBase(pr$typeValidation); key <- paste(pr$splitId, baseRg)
         if (is.null(manifests[[key]])) manifests[[key]] <- readManifest(file.path(outDir, "splits"), pr$splitId, baseRg)
+        poolM <- NULL; if (grepl("PoolRefit$", pr$typeValidation)) { k2 <- paste(pr$splitId, "FutureTainted"); if (is.null(manifests[[k2]])) manifests[[k2]] <- readManifest(file.path(outDir, "splits"), pr$splitId, "FutureTainted"); poolM <- manifests[[k2]] }      # ADDED 2026-11-27: a pool refit trains on the status quo's pool of the split (runRefit.R)
         if (isTRUE(P(sim)$rankPerWindow)) {        # the ladder of this window: ranked on its training years only (rankWindows)
           wk <- sprintf("s%d_e%d", pr$windowStart, pr$historyEnd)
           if (is.null(rkWin[[wk]])) { wf <- file.path(outDir, "rankings", paste0(wk, ".csv")); if (!file.exists(wf)) stop("No ranking for window ", wk, ": run stage 'rank' first (", wf, ")"); rkWin[[wk]] <- data.table::fread(wf) }
@@ -199,8 +200,8 @@ doEvent.preValNN <- function(sim, eventTime, eventType) {
         } else ff <- featuresForLevel(rk, pr$numberOfCovariates)
         message(sprintf("[%d/%d] %s", i, nrow(work), pr$modelName))
         res <- tryCatch(runModel(store, manifests[[key]], pr, ff, adapter, hyper, modelDir, reRun = P(sim)$reRunModels, device = device,
-                                 zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience,
-                                 mainModelDir = file.path(root, paste0("run", if (nzchar(P(sim)$baseRunTag)) paste0("_", P(sim)$baseRunTag) else ""), "testedModels")), error = function(e) e)
+                                 zClip = P(sim)$zClip, earlyStopPatience = P(sim)$earlyStopPatience, poolManifest = poolM,
+                                 mainModelDir =file.path(root, paste0("run", if (nzchar(P(sim)$baseRunTag)) paste0("_", P(sim)$baseRunTag) else ""), "testedModels")), error = function(e) e)
         if (inherits(res, "error")) {
           writeLines(c(pr$modelName, conditionMessage(res)), file.path(modelDir, "errors", paste0(pr$modelName, ".txt")))
           errs[[length(errs) + 1L]] <- data.table::data.table(modelName = pr$modelName, error = conditionMessage(res))
